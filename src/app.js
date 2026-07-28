@@ -13,10 +13,17 @@ const app = express();
 
 app.use(cors());
 
-express.raw({ type: "application/json" })
+// express.raw({ type: "application/json" })
 app.use(express.json());
 
 app.use(express.urlencoded({ extended: true }));
+
+app.get("/", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "LoveLink API is running 🚀",
+  });
+});
 
 app.use("/api/auth", authRoutes);
 app.use("/api/matches", matchRoutes);
