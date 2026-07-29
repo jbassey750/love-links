@@ -31,28 +31,63 @@ const PaymentSchema = new mongoose.Schema(
 
     paymentGateway: {
       type: String,
-      default: "stripe",
+      enum: ["flutterwave"],
+      default: "flutterwave",
     },
 
-    stripePaymentIntentId: {
+
+    txRef: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+    },
+
+
+    transactionId: {
+      type: String,
+      default: "",
+      index: true,
+    },
+
+
+    flutterwaveTransactionId: {
       type: String,
       default: "",
     },
+
+
+    customerEmail: {
+      type: String,
+      default: "",
+    },
+
 
     receiptUrl: {
       type: String,
       default: "",
     },
 
+
     status: {
       type: String,
-      enum: ["pending", "completed", "failed", "refunded"],
+      enum: [
+        "pending",
+        "completed",
+        "failed",
+        "refunded"
+      ],
       default: "pending",
     },
+
   },
   {
     timestamps: true,
   }
 );
 
-module.exports = mongoose.model("Payment", PaymentSchema);
+
+module.exports = mongoose.model(
+  "Payment",
+  PaymentSchema
+);

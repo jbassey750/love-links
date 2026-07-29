@@ -1,13 +1,32 @@
 const express = require("express");
+
 const router = express.Router();
 
-const protect = require("../middleware/auth");
-const paymentController = require("../controllers/paymentController");
+const protect = require("../middlewares/auth");
 
+const {
+  initializeCheckout,
+  verifyCheckout,
+} = require("../controllers/paymentController");
+
+/**
+ * Initialize Flutterwave Checkout
+ * POST /api/payments/checkout
+ */
 router.post(
-  "/create-checkout-session",
+  "/checkout",
   protect,
-  paymentController.createCheckoutSession
+  initializeCheckout
+);
+
+/**
+ * Verify Flutterwave Payment
+ * GET /api/payments/verify
+ */
+router.get(
+  "/verify",
+  protect,
+  verifyCheckout
 );
 
 module.exports = router;
