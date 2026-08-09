@@ -2,7 +2,7 @@ const { getIO } = require("../socket/socketManager");
 const Notification = require("../models/Notification");
 
 /**
- * Get Logged-in User Notifications
+ * Get Logged-in User Notifications 
  */
 exports.getNotifications = async (req, res) => {
   try {

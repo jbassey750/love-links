@@ -11,6 +11,8 @@ const {
 
     getSingleChat,
 
+    getChatMessages,
+
     archiveChat,
 
     deactivateChat
@@ -19,8 +21,9 @@ const {
 
 // router.post("/chat", protect, createChat);
     
-router.get("/user/:userId",protect, getUserChats);
+router.get("/user/:userId", protect, getUserChats); 
 
+router.get("/:chatId/messages", protect, getChatMessages);
 router.get("/:chatId", protect, getSingleChat);
 
 // router.patch("/:chatId/archive", protect, archiveChat);

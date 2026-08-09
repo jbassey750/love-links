@@ -1,49 +1,59 @@
 const mongoose = require("mongoose");
 
 const NotificationSchema = new mongoose.Schema(
-{
-
-    receiver:{
-        type:mongoose.Schema.Types.ObjectId,
-        ref:"User",
-        required:true
+  {
+    receiver: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
     },
 
-    sender:{
-        type:mongoose.Schema.Types.ObjectId,
-        ref:"User"
+    sender: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
     },
 
-    type:{
-        type:String,
-        enum:[
-            "like",
-            "match",
-            "message",
-            "subscription",
-            "system"
-        ],
-        required:true
+    data: {
+      matchId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Match",
+      },
+
+      chatId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Chat",
+      },
+
+      userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
     },
 
-    title:{
-        type:String,
-        required:true
+    type: {
+      type: String,
+      enum: ["like", "match", "message", "subscription", "system", "match-reminder"],
+      required: true,
     },
 
-    body:{
-        type:String,
-        required:true
-    }, 
+    title: {
+      type: String,
+      required: true,
+    },
 
-    isRead:{
-        type:Boolean,
-        default:false
-    }
+    body: {
+      type: String,
+      required: true,
+    },
 
-},
-{
-    timestamps:true
-});
+    isRead: {
+      type: Boolean,
+      default: false,
+    },
+  },
+  {
+    timestamps: true,
+  },
+);
 
-module.exports = mongoose.model("Notification",NotificationSchema);
+module.exports = mongoose.model("Notification", NotificationSchema);

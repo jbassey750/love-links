@@ -2,12 +2,12 @@ const express = require("express");
 
 const router = express.Router();
 
-const protect = require("../middlewares/auth");
+const protect = require("../middleware/auth");
 
 const {
   initializeCheckout,
   verifyCheckout,
-} = require("../controllers/paymentController");
+} = require("../controllers/paymentController"); 
 
 /**
  * Initialize Flutterwave Checkout

@@ -22,21 +22,43 @@ module.exports = async (req, res, next) => {
     const user = await User.findById(req.user._id);
 
     if (!user) {
+      console.log("========== CHECK CHAT POINTS FAILED ==========");
+      console.log("User not found for ID:", req.user._id);
+      console.log("=============================================");
       return res.status(404).json({
         success: false,
         message: "User not found.",
       });
     }
 
-    // Check if user has enough points
+    console.log("========== CHECK CHAT POINTS ==========");
+    console.log("User:", user.fullName || user.email || user._id.toString());
+    console.log("Role:", user.role);
+    console.log("Points:", user.points);
+    console.log("Message Type:", type);
+    console.log("Message Cost:", cost);
+    console.log("=======================================");
+
+    // ==========================================
+    // Admin and Premium users chat for free
+    // ==========================================
+    if (user.role === "admin" || user.role === "premium") {
+      req.chatPointCost = 0;
+      return next();
+    }
+
+    // ==========================================
+    // Regular users must have enough points
+    // ==========================================
     if (user.points < cost) {
       return res.status(403).json({
         success: false,
-        message: "You don't have enough chat points. Please purchase more points.",
+        message:
+          "You don't have enough chat points. Please purchase more points.",
       });
     }
 
-    // Make the cost available to the controller if needed later
+    // Make the cost available to the controller
     req.chatPointCost = cost;
 
     return next();

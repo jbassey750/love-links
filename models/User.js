@@ -8,6 +8,12 @@ const UserSchema = new mongoose.Schema(
       trim: true,
     },
 
+    username: {
+      type: String,
+      required: true,
+      unique: true,
+    },
+
     email: {
       type: String,
       required: true,
@@ -20,14 +26,65 @@ const UserSchema = new mongoose.Schema(
       required: true,
     },
 
+    phone: {
+      type: String,
+      default: "",
+    },
+
+    gender: {
+      type: String,
+      enum: [
+        "female",
+        "male",
+        "non-binary",
+        "agender",
+        "bigender",
+        "genderfluid",
+        "genderqueer",
+        "transgender",
+        "prefer not to say",
+        "other",
+      ],
+    },
+
+    lookingFor: {
+      type: [String],
+      enum: [
+        "female",
+        "male",
+        "non-binary",
+        "agender",
+        "bigender",
+        "genderfluid",
+        "genderqueer",
+        "transgender",
+        "prefer not to say",
+        "other",
+      ],
+      default: ["female", "male"],
+    },
+
     age: {
       type: Number,
       required: true,
     },
 
-    location: {
+    state: {
       type: String,
       required: true,
+    },
+
+    region: {
+      type: String,
+      required: true,
+    },
+
+    location: {
+      country: String,
+      state: String,
+      city: String,
+      latitude: Number,
+      longitude: Number,
     },
 
     photo: {
@@ -60,6 +117,7 @@ const UserSchema = new mongoose.Schema(
 
     status: {
       type: String,
+      enum: ["online", "offline", "away"],
       default: "offline",
     },
 
@@ -103,6 +161,24 @@ const UserSchema = new mongoose.Schema(
     points: {
       type: Number,
       default: 0,
+    },
+
+    accountType: {
+      type: String,
+      enum: ["real", "fake"],
+      default: "real",
+    },
+
+    createdBy: {
+      type: String,
+      enum: ["user", "admin"],
+      default: "user",
+    },
+
+    role: {
+      type: String,
+      enum: ["user", "premium", "admin", "moderator"],
+      default: "user",
     },
   },
   {

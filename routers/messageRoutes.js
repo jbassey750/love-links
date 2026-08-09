@@ -18,7 +18,7 @@ editMessage
 
 } = require("../controllers/messageController");
 
-router.post("/", protect, checkChatPoints, sendMessage);
+router.post("/", protect, checkChatPoints, sendMessage); 
 
 router.get("/:chatId", protect, getMessages);
 

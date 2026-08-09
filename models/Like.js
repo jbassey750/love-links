@@ -16,7 +16,7 @@ const LikeSchema = new mongoose.Schema(
 
     status:{
         type:String,
-        enum:["pending","matched"],
+        enum:["pending","matched","unmatched"],
         default:"pending"
     }
 },

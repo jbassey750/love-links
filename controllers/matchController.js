@@ -6,6 +6,8 @@ const Match = require("../models/Match");
 const Chat = require("../models/Chat");
 const createNotification = require("../utils/createNotification");
 
+const { assignModerator } = require("../services/fakeAccountAssignmentService");
+
 /**
  * Like a user or create a match
  */
@@ -57,25 +59,26 @@ exports.likeUser = async (req, res) => {
       });
     }
 
-    // Has the other user liked me?
+    // ======================================
+    // Check if the other user already liked me
+    // ======================================
     const reverseLike = await Like.findOne({
       fromUser: targetUserId,
       toUser: userId,
     });
 
-    
-
-    // -------------------------------------------------
-    // NO MATCH YET
-    // -------------------------------------------------
+    // ======================================
+    // NO REVERSE LIKE
+    // ======================================
     if (!reverseLike) {
+      // Create pending like
       await Like.create({
         fromUser: userId,
         toUser: targetUserId,
         status: "pending",
       });
 
-      // Notify the other user
+      // Send notification
       await createNotification({
         receiver: targetUserId,
         sender: userId,
@@ -83,7 +86,7 @@ exports.likeUser = async (req, res) => {
         title: "Someone liked you ❤️",
         message: `${user.fullName} liked your profile.`,
         data: {
-          userId: userId,
+          userId,
         },
       });
 
@@ -93,6 +96,11 @@ exports.likeUser = async (req, res) => {
         message: "Like sent successfully.",
       });
     }
+
+    // ======================================
+    // REVERSE LIKE EXISTS
+    // Create match here...
+    // ======================================
 
     // -------------------------------------------------
     // MUTUAL LIKE
@@ -138,6 +146,61 @@ exports.likeUser = async (req, res) => {
     match.chatId = chat._id;
     await match.save();
 
+    // ======================================
+    // Assign moderator if one user is fake
+    // ======================================
+    // ======================================
+    // Assign moderator if one user is fake
+    // ======================================
+
+    let assignment = null;
+
+    console.log("========== ACCOUNT TYPE CHECK ==========");
+    console.log("Current user:", {
+      id: user._id.toString(),
+      name: user.fullName,
+      accountType: user.accountType,
+      role: user.role,
+    });
+
+    console.log("Target user:", {
+      id: targetUser._id.toString(),
+      name: targetUser.fullName,
+      accountType: targetUser.accountType,
+      role: targetUser.role,
+    });
+
+    if (user.accountType === "fake" || targetUser.accountType === "fake") {
+      const fakeUser = user.accountType === "fake" ? user : targetUser;
+
+      const realUser = user.accountType === "real" ? user : targetUser;
+
+      console.log("================================");
+      console.log("FAKE ACCOUNT MATCH DETECTED");
+      console.log("Fake user:", fakeUser._id.toString());
+      console.log("Real user:", realUser._id.toString());
+      console.log("Chat:", chat._id.toString());
+      console.log("================================");
+
+      try {
+        console.log("🔄 Calling assignModerator() with fakeUserId, realUserId, chatId...");
+
+        assignment = await assignModerator({
+          fakeUserId: fakeUser._id,
+          realUserId: realUser._id,
+          chatId: chat._id,
+        });
+
+        console.log("✅ ASSIGNMENT CREATED:");
+        console.log(assignment);
+      } catch (error) {
+        console.error("❌ MODERATOR ASSIGNMENT ERROR:");
+        console.error(error);
+      }
+    } else {
+      console.log("⚠️ NO FAKE ACCOUNT DETECTED");
+    }
+
     //socket.io emmited
     const io = getIO();
 
@@ -154,6 +217,9 @@ exports.likeUser = async (req, res) => {
     });
 
     // Send notifications to both users concurrently
+
+    console.log("Creating match notifications...");
+
     await Promise.all([
       createNotification({
         receiver: targetUserId,
@@ -164,8 +230,10 @@ exports.likeUser = async (req, res) => {
         data: {
           matchId: match._id,
           chatId: chat._id,
+          userId,
         },
       }),
+
       createNotification({
         receiver: userId,
         sender: targetUserId,
@@ -175,9 +243,12 @@ exports.likeUser = async (req, res) => {
         data: {
           matchId: match._id,
           chatId: chat._id,
+          userId: targetUserId,
         },
       }),
     ]);
+
+    console.log("Match notifications created.");
 
     return res.status(201).json({
       success: true,
@@ -211,13 +282,50 @@ exports.getMatches = async (req, res) => {
         path: "users",
         select: "fullName age location photo badge bio status",
       })
-      .populate("chatId")
-      .populate("lastMessage");
+      .populate({
+        path: "chatId",
+        populate: {
+          path: "lastMessage",
+          select: "message sender createdAt",
+        },
+      });
 
+    console.log("========= MATCHES =========");
+
+    matches.forEach((match) => {
+      console.log(
+        match.users.map((user) => ({
+          name: user.fullName,
+          status: user.status,
+        })),
+      );
+    });
+
+    // ============================
+    // ADD THE CODE HERE
+    // ============================
+    const formattedMatches = matches.map((match) => {
+      const otherUser = match.users.find(
+        (user) => user._id.toString() !== req.user._id.toString(),
+      );
+
+      return {
+        _id: match._id,
+        chatId: match.chatId?._id,
+        user: otherUser,
+        lastMessage: match.chatId?.lastMessage?.message || "No messages yet",
+        lastMessageAt: match.chatId?.lastMessage?.createdAt || null,
+        unreadCount: match.unreadCount || 0,
+      };
+    });
+
+    // ============================
+    // RETURN THE FORMATTED DATA
+    // ============================
     res.status(200).json({
       success: true,
-      totalMatches: matches.length,
-      matches,
+      totalMatches: formattedMatches.length,
+      matches: formattedMatches,
     });
   } catch (error) {
     res.status(500).json({
@@ -345,3 +453,5 @@ exports.getMatch = async (req, res) => {
     });
   }
 };
+
+// fake users

@@ -1,4 +1,5 @@
 const Notification = require("../models/Notification");
+const { getIO } = require("../socket/socketManager");
 
 const createNotification = async ({
   receiver,
@@ -11,7 +12,7 @@ const createNotification = async ({
 }) => {
   const notificationBody = body || message || title;
 
-  return await Notification.create({
+  const notification = await Notification.create({
     receiver,
     sender,
     type,
@@ -19,6 +20,13 @@ const createNotification = async ({
     body: notificationBody,
     data,
   });
+
+  // Emit notification in real time
+  const io = getIO();
+
+  io.to(receiver.toString()).emit("notification", notification);
+
+  return notification;
 };
 
 module.exports = createNotification;

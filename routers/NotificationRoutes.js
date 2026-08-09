@@ -14,9 +14,9 @@ const {
   markAllAsRead,
 
   deleteNotification,
-} = require("../controllers/notificationController");
+} = require("../controllers/notificationController"); 
 
-router.get("/", protect, getNotifications);
+router.get("/", protect, getNotifications); 
 
 router.get("/unread-count", protect, getUnreadCount);
 
