@@ -21,6 +21,7 @@ const generateToken = (user) => {
 /**
  * SIGN UP
  */
+
 exports.signup = async (req, res) => {
   try {
     let {
@@ -37,6 +38,7 @@ exports.signup = async (req, res) => {
       interests,
       state,
       region,
+      relationshipStatus,
     } = req.body;
 
     // ===============================
@@ -64,14 +66,52 @@ exports.signup = async (req, res) => {
       });
     }
 
+    if (!relationshipStatus) {
+      return res.status(400).json({
+        success: false,
+        message: "Relationship status is required.",
+      });
+    }
+
+    // ===============================
+    // Normalize Basic Fields
+    // ===============================
+
     username = username.trim();
     email = email.toLowerCase().trim();
     fullName = fullName.trim();
     phone = phone.trim();
     gender = gender.toLowerCase().trim();
+    relationshipStatus = relationshipStatus.toLowerCase().trim();
+
     state = state ? state.trim() : "";
     region = region ? region.trim() : "";
-    // lookingFor = lookingFor.toLowerCase().trim();
+
+    // ===============================
+    // Validate Relationship Status
+    // ===============================
+
+    const allowedRelationshipStatuses = [
+      "single",
+      "in a relationship",
+      "married",
+      "divorced",
+      "widowed",
+      "separated",
+      "it's complicated",
+      "prefer not to say",
+    ];
+
+    if (!allowedRelationshipStatuses.includes(relationshipStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid relationship status.",
+      });
+    }
+
+    // ===============================
+    // Validate State
+    // ===============================
 
     if (!state) {
       return res.status(400).json({
@@ -80,6 +120,10 @@ exports.signup = async (req, res) => {
       });
     }
 
+    // ===============================
+    // Validate Region
+    // ===============================
+
     if (!region) {
       return res.status(400).json({
         success: false,
@@ -87,7 +131,10 @@ exports.signup = async (req, res) => {
       });
     }
 
-    // Normalize interests payload when sent as JSON string
+    // ===============================
+    // Normalize Interests
+    // ===============================
+
     if (typeof interests === "string") {
       try {
         interests = JSON.parse(interests);
@@ -100,7 +147,10 @@ exports.signup = async (req, res) => {
       interests = [];
     }
 
-    // Normalize lookingFor
+    // ===============================
+    // Normalize Looking For
+    // ===============================
+
     if (typeof lookingFor === "string") {
       try {
         // Handle JSON string: '["male","female"]'
@@ -115,10 +165,13 @@ exports.signup = async (req, res) => {
       lookingFor = [];
     }
 
-    // Normalize each value
+    // Normalize each lookingFor value
     lookingFor = lookingFor.map((item) => item.toLowerCase().trim());
 
-    // Add it here
+    // ===============================
+    // Validate Looking For
+    // ===============================
+
     const allowedLookingFor = [
       "female",
       "male",
@@ -132,11 +185,11 @@ exports.signup = async (req, res) => {
       "other",
     ];
 
-    const isValid = lookingFor.every((item) =>
-      allowedLookingFor.includes(item),
+    const isValidLookingFor = lookingFor.every((item) =>
+      allowedLookingFor.includes(item)
     );
 
-    if (!isValid) {
+    if (!isValidLookingFor) {
       return res.status(400).json({
         success: false,
         message: "Invalid lookingFor value.",
@@ -173,7 +226,7 @@ exports.signup = async (req, res) => {
     }
 
     // ===============================
-    // Email Exists?
+    // Check Existing Email
     // ===============================
 
     const existingUser = await User.findOne({
@@ -187,8 +240,13 @@ exports.signup = async (req, res) => {
       });
     }
 
-    //existing username?
-    const existingUsername = await User.findOne({ username });
+    // ===============================
+    // Check Existing Username
+    // ===============================
+
+    const existingUsername = await User.findOne({
+      username,
+    });
 
     if (existingUsername) {
       return res.status(400).json({
@@ -218,6 +276,7 @@ exports.signup = async (req, res) => {
       age,
       state,
       region,
+      relationshipStatus,
       bio: bio || "",
       badge: badge || "Love & Friends",
       interests,
@@ -240,13 +299,10 @@ exports.signup = async (req, res) => {
     // Response
     // ===============================
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
-
       message: "Account created successfully.",
-
       token,
-
       user: safeUser,
     });
   } catch (error) {
@@ -258,6 +314,8 @@ exports.signup = async (req, res) => {
     });
   }
 };
+
+
 
 /**
  * LOGIN

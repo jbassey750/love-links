@@ -3,13 +3,14 @@ const { getIO } = require("../socket/socketManager");
 const Message = require("../models/Message");
 const User = require("../models/User");
 const FakeAccountAssignment = require("../models/FakeAccountAssignment");
+const createNotification = require("../utils/createNotification");
 
 exports.getAssignedChats = async (req, res) => {
   try {
     const moderatorId = req.user._id;
 
     const assignments = await FakeAccountAssignment.find({
-      moderator: moderatorId, 
+      moderator: moderatorId,
       status: "active",
     })
       .populate("fakeUser", "fullName username photo status badge accountType")
@@ -127,6 +128,34 @@ exports.replyAsFakeUser = async (req, res) => {
     const io = getIO();
 
     io.to(assignment.chat._id.toString()).emit("new-message", populatedMessage);
+
+    // ==========================================
+    // Create notification for real/premium user
+    // ==========================================
+
+    try {
+      await createNotification({
+        receiver: assignment.realUser._id,
+        sender: assignment.fakeUser._id,
+        type: "message",
+        title: "New Message",
+        message: `${assignment.fakeUser.fullName || "Someone"} sent you a message.`,
+        data: {
+          chatId: assignment.chat._id,
+          messageId: newMessage._id,
+        },
+      });
+
+      console.log(
+        "✅ Notification created for:",
+        assignment.realUser._id.toString(),
+      );
+    } catch (notificationError) {
+      console.error(
+        "❌ Failed to create message notification:",
+        notificationError,
+      );
+    }
 
     return res.status(201).json({
       success: true,

@@ -104,6 +104,21 @@ const UserSchema = new mongoose.Schema(
       },
     ],
 
+    relationshipStatus: {
+      type: String,
+      enum: [
+        "single",
+        "in a relationship",
+        "married",
+        "divorced",
+        "widowed",
+        "separated",
+        "it's complicated",
+        "prefer not to say",
+      ],
+      default: "single",
+    },
+
     badge: {
       type: String,
       enum: ["Romance", "Friends", "Love & Friends"],

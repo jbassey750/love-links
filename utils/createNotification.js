@@ -21,10 +21,10 @@ const createNotification = async ({
     data,
   });
 
-  // Emit notification in real time
+  // Emit notification in real time 
   const io = getIO();
 
-  io.to(receiver.toString()).emit("notification", notification);
+  io.to(receiver.toString()).emit("new-notification", notification);
 
   return notification;
 };
