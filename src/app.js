@@ -15,6 +15,8 @@ const discoverRoutes = require("../routers/discoverRoutes");
 const updateLocationRoutes = require("../routers/updateLocationRoutes");
 const adminRoutes = require("../routers/adminRoutes");
 const moderatorRoutes = require("../routers/moderatorRoutes");
+const diaryRoutes = require("../routers/diaryRoutes");
+const datePlanRoutes = require("../routers/datePlanRoutes");
 
 const app = express();
 
@@ -26,28 +28,6 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-// app.use((req, res, next) => {
-  // res.header("Access-Control-Allow-Origin", process.env.CLIENT_URL || "http://localhost:5173");
-  // res.header(
-    // "Access-Control-Allow-Methods",
-    // "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS",
-  // );
-  // res.header(
-    // "Access-Control-Allow-Headers",
-    // "Origin, X-Requested-With, Content-Type, Accept, Authorization",
-  // );
-// 
-  // if (req.method === "OPTIONS") {
-    // return res.sendStatus(204);
-  // }
-// 
-  // next();
-// });
-// ;
-// 
-// app.use(cors(corsOptions));
-
-// express.raw({ type: "application/json" })
 app.use(express.json());
 
 app.use(express.urlencoded({ extended: true }));
@@ -73,5 +53,7 @@ app.use("/api/webhooks", webhookRoutes);
 app.use("/api/users/location", updateLocationRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/moderator", moderatorRoutes);
+app.use("/api/diary", diaryRoutes);
+app.use("/api/date-plans", datePlanRoutes);
 
 module.exports = app;

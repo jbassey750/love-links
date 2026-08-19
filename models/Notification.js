@@ -28,11 +28,28 @@ const NotificationSchema = new mongoose.Schema(
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
       },
+
+      // Date Planner notification
+      datePlanId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "DatePlan",
+      },
     },
 
     type: {
       type: String,
-      enum: ["like", "match", "message", "subscription", "system", "match-reminder"],
+      enum: [
+        "like",
+        "match",
+        "message",
+        "subscription",
+        "system",
+        "match-reminder",
+
+        // Date Planner
+        "date",
+        "date-reminder",
+      ],
       required: true,
     },
 

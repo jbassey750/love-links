@@ -4,17 +4,24 @@ const router = express.Router();
 
 const upload = require("../middleware/upload");
 
-// const { signup } = require("../controllers/authController");
-const { signup, login } = require("../controllers/authController");
+const protect  = require("../middleware/auth");
+
+const {
+  signup,
+  login,
+  logout,
+} = require("../controllers/authController");
 
 router.post(
-  "/signup", 
-
+  "/signup",
   upload.single("photo"),
-
   signup,
 );
 
 router.post("/login", login);
+
+// Logout
+// POST /api/auth/logout
+router.post("/logout", protect, logout);
 
 module.exports = router;
