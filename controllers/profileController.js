@@ -272,3 +272,61 @@ exports.deleteProfilePhoto = async (req, res) => {
     });
   }
 };
+
+
+// Get another user's public profile
+exports.getUserProfile = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+
+    const user = await User.findById(userId).select(
+      "-password -email -phone -blocked -likes -subscription -__v"
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User profile not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "User profile retrieved successfully",
+      user: {
+        id: user._id,
+        username: user.username,
+        fullName: user.fullName,
+        gender: user.gender,
+        age: user.age,
+        bio: user.bio,
+        photo: user.photo,
+        badge: user.badge,
+        relationshipStatus: user.relationshipStatus,
+        state: user.state,
+        region: user.region,
+        interests: user.interests,
+        lookingFor: user.lookingFor,
+        verified: user.verified,
+        status: user.status,
+        accountType: user.accountType,
+        createdAt: user.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error("Get user profile error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to retrieve user profile",
+      error: error.message,
+    });
+  }
+};
