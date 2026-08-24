@@ -17,6 +17,7 @@ const adminRoutes = require("../routers/adminRoutes");
 const moderatorRoutes = require("../routers/moderatorRoutes");
 const diaryRoutes = require("../routers/diaryRoutes");
 const datePlanRoutes = require("../routers/datePlanRoutes");
+const otpRoutes = require("../routers/otpRoutes");
 
 const app = express();
 
@@ -40,7 +41,7 @@ app.get("/", (req, res) => {
   });
 });
 
-app.use("/api/auth", authRoutes); 
+app.use("/api/auth", authRoutes);  
 app.use("/api/discover", discoverRoutes);
 app.use("/api/matches", matchRoutes);
 app.use("/api/chats", chatRoutes);
@@ -55,5 +56,6 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/moderator", moderatorRoutes);
 app.use("/api/diary", diaryRoutes);
 app.use("/api/date-plans", datePlanRoutes);
+app.use("/api/otp", otpRoutes);
 
 module.exports = app;

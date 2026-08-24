@@ -2,6 +2,12 @@ const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
+// Import OTP model
+const OTP = require("../models/OTP");
+
+// Import email service
+const { sendOTPEmail } = require("../services/emailService");
+
 /**
  * Generate JWT Token
  */
@@ -186,7 +192,7 @@ exports.signup = async (req, res) => {
     ];
 
     const isValidLookingFor = lookingFor.every((item) =>
-      allowedLookingFor.includes(item)
+      allowedLookingFor.includes(item),
     );
 
     if (!isValidLookingFor) {
@@ -315,8 +321,9 @@ exports.signup = async (req, res) => {
   }
 };
 
-
-
+/**
+ * LOGIN
+ */
 /**
  * LOGIN
  */
@@ -327,11 +334,9 @@ exports.login = async (req, res) => {
     // ===============================
     // Validate
     // ===============================
-
     if (!email || !password) {
       return res.status(400).json({
         success: false,
-
         message: "Email and password are required.",
       });
     }
@@ -341,15 +346,11 @@ exports.login = async (req, res) => {
     // ===============================
     // Find User
     // ===============================
-
-    const user = await User.findOne({
-      email,
-    });
+    const user = await User.findOne({ email });
 
     if (!user) {
       return res.status(401).json({
         success: false,
-
         message: "Invalid email or password.",
       });
     }
@@ -357,60 +358,104 @@ exports.login = async (req, res) => {
     // ===============================
     // Compare Password
     // ===============================
-
-    const isMatch = await bcrypt.compare(
-      password,
-
-      user.password,
-    );
+    const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
       return res.status(401).json({
         success: false,
-
         message: "Invalid email or password.",
       });
     }
 
-    // ===============================
-    // Generate Token
-    // ===============================
+    // =====================================================
+    // DO NOT GENERATE JWT YET
+    // User must verify OTP first
+    // =====================================================
 
-    const token = generateToken(user);
+    // Import OTP model
+    const OTP = require("../models/OTP");
 
-    // ===============================
-    // Set User Online
-    // ===============================
+    // Import email service
+    const { sendOTPEmail } = require("../services/emailService");
 
-    user.status = "online";
-    await user.save();
+    // =====================================================
+    // Check if there is an existing active OTP
+    // =====================================================
 
-    // ===============================
-    // Safe User
-    // ===============================
+    const existingOTP = await OTP.findOne({
+      userId: user._id,
+      type: "login",
+      verified: false,
+      expiresAt: { $gt: new Date() },
+    });
 
-    const safeUser = await User.findById(user._id).select("-password");
+    if (existingOTP) {
+      return res.status(429).json({
+        success: false,
+        message:
+          "A verification code has already been sent. Please check your email.",
+        requiresOTP: true,
+        userId: user._id,
+      });
+    }
 
-    // ===============================
+    // =====================================================
+    // Generate 6-digit OTP
+    // =====================================================
+
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // =====================================================
+    // OTP expires after 10 minutes
+    // =====================================================
+
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    // =====================================================
+    // Save OTP
+    // =====================================================
+
+    await OTP.create({
+      userId: user._id,
+      email: user.email,
+      otpCode,
+      type: "login",
+      expiresAt,
+      verified: false,
+      attempts: 0,
+    });
+
+    // =====================================================
+    // Send OTP Email
+    // =====================================================
+
+    await sendOTPEmail({
+      email: user.email,
+      fullName: user.fullName,
+      otpCode,
+    });
+
+    // =====================================================
     // Response
-    // ===============================
+    // IMPORTANT:
+    // Never return the OTP
+    // Never return the JWT yet
+    // =====================================================
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-
-      message: "Login successful.",
-
-      token,
-
-      user: safeUser,
+      message:
+        "Login successful. A verification code has been sent to your email.",
+      requiresOTP: true,
+      userId: user._id,
+      email: user.email.replace(/^(.{2}).*(@.*)$/, "$1****$2"),
     });
   } catch (error) {
     console.error("Login Error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-
-      message: error.message,
+      message: "Login failed. Please try again.",
     });
   }
 };
@@ -430,6 +475,7 @@ exports.logout = async (req, res) => {
       });
     }
 
+    // Mark user offline
     user.status = "offline";
 
     await user.save();
@@ -444,6 +490,9 @@ exports.logout = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to logout.",
+      error: process.env.NODE_ENV === "development"
+        ? error.message
+        : undefined,
     });
   }
 };
