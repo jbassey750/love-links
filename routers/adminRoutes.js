@@ -16,6 +16,15 @@ const {
   startAdminConversation,
 } = require("../controllers/adminController");
 
+const {
+  createPackage,
+  getAllPackages,
+  getPackageById,
+  updatePackage,
+  deletePackage,
+  togglePackageStatus,
+} = require("../controllers/packageController");
+
 /**
  * ===============================
  * Admin Routes
@@ -67,5 +76,35 @@ router.post(
   authorize("admin"),
   startAdminConversation,
 );
+
+/*
+|--------------------------------------------------------------------------
+| PUBLIC ROUTES
+|--------------------------------------------------------------------------
+*/
+
+// Get all packages
+router.get("/veiw-all-packages",  getAllPackages);
+
+// Get a single package
+router.get("view-package/:id", getPackageById);
+
+/*
+|--------------------------------------------------------------------------
+| ADMIN PACKAGS MANAGEMENT ROUTES
+|--------------------------------------------------------------------------
+*/
+
+// Create package
+router.post("/packages", protect, authorize("admin"), createPackage);
+
+// Update package
+router.put("/packages/:id", protect, authorize("admin"), updatePackage);
+
+// Delete package
+router.delete("/packages/:id", protect, authorize("admin"), deletePackage);
+
+// Activate / deactivate package
+router.patch("/packages/:id/status", protect, authorize("admin"), togglePackageStatus);
 
 module.exports = router;
