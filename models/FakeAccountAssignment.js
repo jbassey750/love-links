@@ -37,6 +37,16 @@ const FakeAccountAssignmentSchema = new mongoose.Schema(
       default: Date.now,
     },
 
+    expiresAt: {
+      type: Date,
+      required: true,
+    },
+
+    respondedAt: {
+  type: Date,
+  default: null,
+},
+
     releasedAt: {
       type: Date,
       default: null,

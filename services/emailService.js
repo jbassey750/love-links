@@ -1,8 +1,8 @@
-const nodemailer = require("nodemailer");
+const nodemailer = require("nodemailer"); 
 
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT) || 587,
+  port: Number(process.env.SMTP_PORT) || 465,
   secure: process.env.SMTP_SECURE === "true",
   auth: {
     user: process.env.SMTP_USER,
@@ -10,22 +10,30 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+transporter.verify((error, success) => {
+    if (error) {
+        console.error("❌ SMTP CONNECTION FAILED:", error);
+    } else {
+        console.log("✅ SMTP SERVER READY");
+    }
+});
+
 /**
- * Send LoveLink OTP email
+ * Send Enamora OTP email
  */
 const sendOTPEmail = async ({ email, otp, fullName }) => { 
   try {
     const mailOptions = {
-      from: `"LoveLink" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
+      from: `"Enamora" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
       to: email,
-      subject: "Your LoveLink Verification Code ❤️",
+      subject: "Your Enamora Verification Code ❤️",
       html: `
         <!DOCTYPE html>
         <html>
         <head>
           <meta charset="UTF-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-          <title>LoveLink Verification</title>
+          <title>Enamora Verification</title>
         </head>
 
         <body style="
@@ -56,7 +64,7 @@ const sendOTPEmail = async ({ email, otp, fullName }) => {
                 font-family: Georgia, serif;
                 font-size: 32px;
               ">
-                LoveLink ❤️
+                Enamora ❤️
               </h1>
 
               <p style="
@@ -92,7 +100,7 @@ const sendOTPEmail = async ({ email, otp, fullName }) => {
                 font-size: 15px;
                 line-height: 1.6;
               ">
-                Welcome to LoveLink! Please use the verification code
+                Welcome to Enamora! Please use the verification code
                 below to confirm your email address and continue discovering
                 meaningful connections.
               </p>
@@ -161,7 +169,7 @@ const sendOTPEmail = async ({ email, otp, fullName }) => {
                 color: #999999;
                 font-size: 12px;
               ">
-                © ${new Date().getFullYear()} LoveLink. All rights reserved.
+                © ${new Date().getFullYear()} Enamora. All rights reserved.
               </p>
 
               <p style="

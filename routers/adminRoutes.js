@@ -3,6 +3,7 @@ const router = express.Router();
 
 const protect = require("../middleware/auth");
 const authorize = require("../middleware/authorize");
+const upload = require("../middleware/upload");
 
 const {
   createPremiumUser,
@@ -36,11 +37,18 @@ router.post(
   "/create-premium-user",
   protect,
   authorize("admin"),
+  upload.single("photo"),
   createPremiumUser,
 );
 
 // Create Fake Account
-router.post("/fake-accounts", protect, authorize("admin"), createFakeAccount);
+router.post(
+  "/fake-accounts",
+  protect,
+  authorize("admin"),
+  upload.single("photo"),
+  createFakeAccount,
+);
 
 router.post(
   "/fake-likes/:likeId/approve",
@@ -57,7 +65,13 @@ router.post(
 );
 
 // Create Moderator
-router.post("/moderators", protect, authorize("admin"), createModerator);
+router.post(
+  "/moderators",
+  protect,
+  authorize("admin"),
+  upload.single("photo"),
+  createModerator,
+);
 
 router.post(
   "/matches/:matchId/poke",
@@ -84,10 +98,10 @@ router.post(
 */
 
 // Get all packages
-router.get("/veiw-all-packages",  getAllPackages);
+router.get("/view-all-packages", protect, authorize("admin"), getAllPackages);
 
 // Get a single package
-router.get("view-package/:id", getPackageById);
+router.get("/view-package/:id", protect, authorize("admin"), getPackageById);
 
 /*
 |--------------------------------------------------------------------------

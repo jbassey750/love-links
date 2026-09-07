@@ -5,6 +5,16 @@ const User = require("../models/User");
 const OTP = require("../models/OTP");
 const { sendOTPEmail } = require("../services/emailService");
 
+const { generateToken } = require("../controllers/authController");
+
+// const jwt = require("jsonwebtoken");
+
+// const generateToken = (user) => {
+  // return jwt.sign({ id: user._id, email: user.email }, process.env.JWT_SECRET, {
+    // expiresIn: "30d",
+  // });
+// };
+
 // ===============================
 // OTP CONFIGURATION
 // ===============================
@@ -17,6 +27,9 @@ const MAX_VERIFICATION_ATTEMPTS = 5;
 // Maximum OTP requests allowed within the request window
 const MAX_OTP_REQUESTS = 5;
 const OTP_REQUEST_WINDOW_MINUTES = 60;
+
+const canUseOTP = (user) =>
+  user.accountType !== "fake" && ["user", "premium"].includes(user.role);
 
 // ===============================
 // GENERATE OTP
@@ -43,7 +56,7 @@ exports.sendOTP = async (req, res) => {
 
     // Find user
     const user = await User.findById(userId).select(
-      "_id email fullName isVerified",
+      "_id email fullName verified role accountType",
     );
 
     if (!user) {
@@ -53,11 +66,10 @@ exports.sendOTP = async (req, res) => {
       });
     }
 
-    // Already verified
-    if (user.isVerified) {
-      return res.status(400).json({
+    if (!canUseOTP(user)) {
+      return res.status(403).json({
         success: false,
-        message: "Your email is already verified",
+        message: "OTP is not required for this account.",
       });
     }
 
@@ -220,7 +232,10 @@ exports.verifyOTP = async (req, res) => {
     }
 
     // Find user
-    const user = await User.findById(userId).select("_id email isVerified");
+    // const user = await User.findById(userId).select("_id email verified");
+    const user = await User.findById(userId).select(
+      "_id email fullName verified role accountType points",
+    );
 
     if (!user) {
       return res.status(404).json({
@@ -229,11 +244,10 @@ exports.verifyOTP = async (req, res) => {
       });
     }
 
-    // Already verified
-    if (user.isVerified) {
-      return res.status(400).json({
+    if (!canUseOTP(user)) {
+      return res.status(403).json({
         success: false,
-        message: "Your email is already verified",
+        message: "OTP is not required for this account.",
       });
     }
 
@@ -300,7 +314,11 @@ exports.verifyOTP = async (req, res) => {
     // SUCCESSFUL VERIFICATION
     // ===============================
 
-    user.isVerified = true;
+    // ===============================
+    // SUCCESSFUL VERIFICATION
+    // ===============================
+
+    user.verified = true;
 
     await user.save();
 
@@ -309,9 +327,20 @@ exports.verifyOTP = async (req, res) => {
       _id: otpRecord._id,
     });
 
+    const token = generateToken(user);
+
     return res.status(200).json({
       success: true,
-      message: "Email verified successfully. Welcome to LoveLink!",
+      message: "Email verified successfully. Welcome to Enamora!",
+      token,
+      user: {
+        _id: user._id,
+        fullName: user.fullName,
+        email: user.email,
+        role: user.role,
+        accountType: user.accountType,
+        points: user.points,
+      },
     });
   } catch (error) {
     console.error("Verify OTP error:", error);

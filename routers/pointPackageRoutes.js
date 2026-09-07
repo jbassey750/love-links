@@ -3,11 +3,13 @@ const router = express.Router();
 
 const protect = require("../middleware/auth");
 
-const { createPackage } = require("../controllers/pointPackageController");
+const { createPackage } = require("../controllers/packageController");
+const authorize = require("../middleware/authorize");
 
 router.post(
   "/create",
   protect,
+  authorize("admin"),
   createPackage
 );
 

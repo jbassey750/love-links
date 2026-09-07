@@ -1,5 +1,5 @@
 const Payment = require("../models/Payment");
-const PointPackage = require("../models/PointPackage");
+const Package = require("../models/Package");
 
 const {
   initializePayment,
@@ -14,6 +14,7 @@ const {
  * Initialize Flutterwave Payment
  */
 exports.initializeCheckout = async (req, res) => {
+  console.log("🔥 initializeCheckout was called", req.body);
   let txRef;
   try {
     const { packageId } = req.body;
@@ -25,76 +26,64 @@ exports.initializeCheckout = async (req, res) => {
       });
     }
 
-    const pointPackage = await PointPackage.findById(packageId);
+    const packageData = await Package.findById(packageId);
+    console.log("✅ Step 1: packageData found:", !!packageData);
 
-    if (!pointPackage) {
+    if (!packageData) {
       return res.status(404).json({
         success: false,
         message: "Point package not found.",
       });
     }
 
-    if (!pointPackage.active) {
+    if (!packageData.isActive || packageData.type !== "points") {
       return res.status(400).json({
         success: false,
         message: "This package is currently unavailable.",
       });
     }
 
-    txRef = `lovelink_${Date.now()}_${req.user._id}`;
+    txRef = `enamora_${Date.now()}_${req.user._id}`;
+    console.log("✅ Step 2: txRef generated:", txRef);
 
-    // Create pending payment first
     const payment = await Payment.create({
       user: req.user._id,
-
-      pointPackage: pointPackage._id,
-
-      amount: pointPackage.price,
-
-      currency: pointPackage.currency || "USD",
-
-      pointsPurchased: pointPackage.points,
-
+      pointPackage: packageData._id,
+      amount: packageData.price,
+      currency: packageData.currency || "USD",
+      pointsPurchased: packageData.points,
       paymentGateway: "flutterwave",
-
       customerEmail: req.user.email,
-
       status: "pending",
-
       txRef,
     });
+    console.log("✅ Step 3: Payment record created:", payment._id);
 
     const flutterwaveResponse = await initializePayment({
       tx_ref: txRef,
-
-      amount: pointPackage.price,
-
-      currency: pointPackage.currency || "USD",
-
+      amount: packageData.price,
+      currency: packageData.currency || "USD",
       redirect_url: `${process.env.CLIENT_URL}/payment/success?tx_ref=${encodeURIComponent(txRef)}`,
-
       customer: {
         email: req.user.email,
-
         name: req.user.fullName,
       },
-
       customizations: {
-        title: "LoveLink",
-
-        description: `${pointPackage.points} Chat Points`,
+        title: "Enamora",
+        description: `${packageData.points} Chat Points`,
       },
-
       meta: {
         userId: req.user._id.toString(),
-
-        packageId: pointPackage._id.toString(),
-
+        packageId: packageData._id.toString(),
         paymentId: payment._id.toString(),
       },
     });
+    console.log(
+      "✅ Step 4: Flutterwave response received:",
+      flutterwaveResponse,
+    );
 
-    if (!flutterwaveResponse?.link) {
+    if (!flutterwaveResponse?.data?.link) {
       return res.status(500).json({
         success: false,
         message: "Flutterwave checkout link was not generated.",
@@ -104,9 +93,11 @@ exports.initializeCheckout = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Payment initialized successfully.",
-      checkoutUrl: flutterwaveResponse.link,
+      checkoutUrl: flutterwaveResponse.data.link,
     });
   } catch (error) {
+    console.error("🔥🔥 CAUGHT ERROR in initializeCheckout:", error);
+
     if (txRef) {
       await Payment.findOneAndUpdate({ txRef }, { status: "failed" });
     }
@@ -171,5 +162,5 @@ exports.verifyCheckout = async (req, res) => {
       success: false,
       message: error.message,
     });
-  } 
+  }
 };

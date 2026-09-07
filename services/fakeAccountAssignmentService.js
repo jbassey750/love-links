@@ -34,21 +34,34 @@ const assignModerator = async (arg1, arg2, arg3) => {
   console.log("Real User:", realUserId);
   console.log("Chat:", chatId);
   // Check for an existing active assignment
+  // Check for an existing active assignment
   let assignment = await FakeAccountAssignment.findOne({
     chat: chatId,
     status: "active",
   }).populate("moderator");
 
   if (assignment) {
-    // If the assigned moderator is still online, keep using them
-    if (assignment.moderator.status === "online") {
-      return assignment;
-    }
+    const now = new Date();
 
-    // Otherwise mark the assignment as transferred
-    assignment.status = "transferred";
-    assignment.releasedAt = new Date();
-    await assignment.save();
+    // Assignment has expired
+    if (assignment.expiresAt && now >= new Date(assignment.expiresAt)) {
+      assignment.status = "transferred";
+      assignment.releasedAt = now;
+      await assignment.save();
+
+      console.log("⏰ Assignment expired:", assignment._id.toString());
+    } else {
+      // Assignment has not expired yet
+      // Keep the current moderator if they are online
+      if (assignment.moderator?.status === "online") {
+        return assignment;
+      }
+
+      // Moderator went offline before expiry
+      assignment.status = "transferred";
+      assignment.releasedAt = now;
+      await assignment.save();
+    }
   }
 
   // Get all online moderators
@@ -66,6 +79,10 @@ const assignModerator = async (arg1, arg2, arg3) => {
   const randomModerator =
     moderators[Math.floor(Math.random() * moderators.length)];
 
+  // Set the assignment expiration time to 5 minutes from now
+  const assignedAt = new Date();
+  const expiresAt = new Date(assignedAt.getTime() + 5 * 60 * 1000);
+
   // Create a new assignment
   assignment = await FakeAccountAssignment.create({
     chat: chatId,
@@ -73,6 +90,8 @@ const assignModerator = async (arg1, arg2, arg3) => {
     realUser: realUserId,
     moderator: randomModerator._id,
     status: "active",
+    assignedAt,
+    expiresAt,
   });
 
   console.log("✅ FAKE ACCOUNT ASSIGNMENT CREATED");
@@ -148,8 +167,13 @@ const transferAssignment = async (assignmentId) => {
   const randomModerator =
     availableModerators[Math.floor(Math.random() * availableModerators.length)];
 
+  const assignedAt = new Date();
+  const expiresAt = new Date(assignedAt.getTime() + 5 * 60 * 1000);
+
   assignment.moderator = randomModerator._id;
-  assignment.assignedAt = new Date();
+  assignment.assignedAt = assignedAt;
+  assignment.expiresAt = expiresAt;
+  assignment.respondedAt = null;
 
   await assignment.save();
 

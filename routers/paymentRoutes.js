@@ -27,6 +27,6 @@ router.get(
   "/verify",
   protect,
   verifyCheckout
-);
+); 
 
 module.exports = router;

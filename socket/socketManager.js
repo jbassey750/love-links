@@ -1,5 +1,6 @@
 const { Server } = require("socket.io");
 const User = require("../models/User");
+const FakeAccountAssignment = require("../models/FakeAccountAssignment");
 
 const messageSocket = require("./messageSocket");
 const notificationSocket = require("./notificationSocket");
@@ -11,6 +12,74 @@ const readReceiptSocket = require("./readReceiptSocket");
 let io;
 
 const onlineUsers = new Map();
+
+const assignWaitingChatsToModerator = async (moderatorId) => {
+  try {
+    // Find conversations that are waiting for a moderator
+    const waitingAssignments = await FakeAccountAssignment.find({
+      status: "transferred",
+    })
+      .sort({ releasedAt: 1 })
+      .limit(10);
+
+    if (!waitingAssignments.length) {
+      return;
+    }
+
+    console.log(
+      `📋 Found ${waitingAssignments.length} waiting conversation(s).`,
+    );
+
+    for (const assignment of waitingAssignments) {
+      try {
+        const assignedAt = new Date();
+
+        // Give the moderator 5 minutes to respond
+        const expiresAt = new Date(assignedAt.getTime() + 5 * 60 * 1000);
+
+        assignment.moderator = moderatorId;
+        assignment.status = "active";
+        assignment.assignedAt = assignedAt;
+        assignment.expiresAt = expiresAt;
+        assignment.respondedAt = null;
+        assignment.releasedAt = null;
+
+        await assignment.save();
+
+        console.log("🔄 WAITING CHAT ASSIGNED TO MODERATOR");
+
+        console.log("Assignment:", assignment._id.toString());
+
+        console.log("Moderator:", moderatorId.toString());
+
+        console.log("New expiry:", expiresAt);
+
+        // Notify the moderator immediately
+        const io = getIO();
+
+        io.to(moderatorId.toString()).emit("assignment-transferred", {
+          assignmentId: assignment._id,
+          chatId: assignment.chat,
+          fakeUser: assignment.fakeUser,
+          realUser: assignment.realUser,
+          assignedAt,
+          expiresAt,
+        });
+
+        // Only assign one waiting conversation
+        // to this newly-online moderator at a time.
+        break;
+      } catch (assignmentError) {
+        console.error(
+          "❌ Error assigning waiting conversation:",
+          assignmentError,
+        );
+      }
+    }
+  } catch (error) {
+    console.error("❌ Error finding waiting conversations:", error);
+  }
+};
 
 const initSocket = (server) => {
   io = new Server(server, {
@@ -38,6 +107,13 @@ const initSocket = (server) => {
         socket.join(userId.toString());
 
         onlineUsers.set(userId.toString(), socket.id);
+
+        // Check whether this moderator has waiting conversations
+        const user = await User.findById(userId).select("role");
+
+        if (user?.role === "moderator") {
+          await assignWaitingChatsToModerator(userId);
+        }
 
         io.emit("user-online", userId);
       } catch (error) {

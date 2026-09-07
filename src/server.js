@@ -7,6 +7,9 @@ const app = require("./app");
 const connectDB = require("../db/mongooes");
 
 const { initSocket } = require("../socket/socketManager");
+const {
+  startAssignmentExpiryChecker,
+} = require("../services/assignmentExpiryService");
 
 
 const server =
@@ -16,6 +19,8 @@ http.createServer(app);
 initSocket(server);
 
 connectDB(); 
+
+startAssignmentExpiryChecker();
 
 const PORT = process.env.PORT || 5000;
 

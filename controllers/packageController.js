@@ -5,7 +5,7 @@ const Package = require("../models/Package");
  * @route   POST /api/packages
  * @access  Admin
  */
-exports.createPackage = async (req, res) => {
+exports.createPackage = async (req, res) => { 
   try {
     const {
       name,
@@ -16,6 +16,7 @@ exports.createPackage = async (req, res) => {
       duration,
       durationUnit,
       description,
+      isActive,
     } = req.body;
 
     // Basic validation
@@ -83,6 +84,7 @@ exports.createPackage = async (req, res) => {
       durationUnit: type === "subscription" ? durationUnit : null,
 
       description: description || "",
+      isActive: isActive !== undefined ? Boolean(isActive) : true,
 
       createdBy: req.user._id,
     });
@@ -110,7 +112,12 @@ exports.createPackage = async (req, res) => {
  */
 exports.getAllPackages = async (req, res) => {
   try {
-    const packages = await Package.find()
+    const packageFilter =
+      req.user?.role === "admin" && req.query.includeInactive === "true"
+        ? {}
+        : { isActive: true };
+
+    const packages = await Package.find(packageFilter)
       .populate("createdBy", "fullName email")
       .sort({ createdAt: -1 });
 

@@ -1,6 +1,7 @@
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 
 // Import OTP model
 const OTP = require("../models/OTP");
@@ -367,25 +368,30 @@ exports.login = async (req, res) => {
       });
     }
 
-    // =====================================================
-    // DO NOT GENERATE JWT YET
-    // User must verify OTP first
-    // =====================================================
+    // Only real users and premium users must complete login OTP.
+    const requiresOTP =
+      user.accountType !== "fake" &&
+      ["user", "premium"].includes(user.role);
 
-    // Import OTP model
-    const OTP = require("../models/OTP");
+    if (!requiresOTP) {
+      const token = generateToken(user); // pass the whole user object, not user._id
 
-    // Import email service
-    const { sendOTPEmail } = require("../services/emailService");
-
-    // =====================================================
-    // Check if there is an existing active OTP
-    // =====================================================
+      return res.status(200).json({
+        success: true,
+        message: "Login successful.",
+        token,
+        user: {
+          _id: user._id,
+          fullName: user.fullName,
+          email: user.email,
+          role: user.role,
+          accountType: user.accountType,
+        },
+      });
+    }
 
     const existingOTP = await OTP.findOne({
-      userId: user._id,
-      type: "login",
-      verified: false,
+      user: user._id,
       expiresAt: { $gt: new Date() },
     });
 
@@ -399,48 +405,23 @@ exports.login = async (req, res) => {
       });
     }
 
-    // =====================================================
-    // Generate 6-digit OTP
-    // =====================================================
-
-    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-
-    // =====================================================
-    // OTP expires after 10 minutes
-    // =====================================================
-
+    const otpCode = crypto.randomInt(100000, 1000000).toString();
+    const otpHash = await bcrypt.hash(otpCode, 10);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-    // =====================================================
-    // Save OTP
-    // =====================================================
-
     await OTP.create({
-      userId: user._id,
+      user: user._id,
       email: user.email,
-      otpCode,
-      type: "login",
+      otpHash,
       expiresAt,
-      verified: false,
       attempts: 0,
     });
-
-    // =====================================================
-    // Send OTP Email
-    // =====================================================
 
     await sendOTPEmail({
       email: user.email,
       fullName: user.fullName,
-      otpCode,
+      otp: otpCode,
     });
-
-    // =====================================================
-    // Response
-    // IMPORTANT:
-    // Never return the OTP
-    // Never return the JWT yet
-    // =====================================================
 
     return res.status(200).json({
       success: true,
@@ -490,9 +471,10 @@ exports.logout = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to logout.",
-      error: process.env.NODE_ENV === "development"
-        ? error.message
-        : undefined,
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 };
+
+
+exports.generateToken = generateToken;

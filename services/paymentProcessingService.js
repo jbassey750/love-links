@@ -2,7 +2,7 @@ const mongoose = require("mongoose");
 
 const User = require("../models/User");
 const Payment = require("../models/Payment");
-const PointPackage = require("../models/PointPackage");
+const Package = require("../models/Package");
 
 exports.processVerifiedPayment = async (transaction) => {
   const session = await mongoose.startSession();
@@ -54,7 +54,7 @@ exports.processVerifiedPayment = async (transaction) => {
       throw new Error("Transaction reference mismatch.");
     }
 
-    const pointPackage = await PointPackage.findById(
+    const pointPackage = await Package.findById(
       payment.pointPackage
     ).session(session);
 

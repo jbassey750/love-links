@@ -1,9 +1,15 @@
 const express = require("express");
 const router = express.Router();
 
-const { getAllPackages } = require("../controllers/packageController");
+const protect = require("../middleware/auth");
+
+const {
+	getAllPackages,
+	getPackageById,
+} = require("../controllers/packageController");
 
 // Public route - users can view active packages
-router.get("/", getAllPackages);
+router.get("/", protect, getAllPackages);
+router.get("/:id", protect, getPackageById);
 
 module.exports = router;

@@ -13,8 +13,8 @@ exports.getAssignedChats = async (req, res) => {
       moderator: moderatorId,
       status: "active",
     })
-      .populate("fakeUser", "fullName username photo status badge accountType")
-      .populate("realUser", "fullName username photo status badge")
+      .populate("fakeUser", "-password -phone -email")
+      .populate("realUser", "-password -phone -email")
       .sort({ assignedAt: -1 });
 
     const chats = await Promise.all(
@@ -28,19 +28,14 @@ exports.getAssignedChats = async (req, res) => {
 
         return {
           assignmentId: assignment._id,
-
           fakeUser: assignment.fakeUser,
-
           realUser: assignment.realUser,
-
           status: assignment.status,
-
           assignedAt: assignment.assignedAt,
-
+          expiresAt: assignment.expiresAt,
+          respondedAt: assignment.respondedAt,
           chatId: chat?._id || null,
-
           lastMessage: chat?.lastMessage || null,
-
           lastMessageAt: chat?.lastMessageAt || null,
         };
       }),
@@ -104,19 +99,44 @@ exports.replyAsFakeUser = async (req, res) => {
       });
     }
 
-    // Save message
+    // Verify assignment has not expired
+    if (assignment.expiresAt && new Date() >= new Date(assignment.expiresAt)) {
+      return res.status(410).json({
+        success: false,
+        code: "CHAT_EXPIRED",
+        message:
+          "Your chat session has expired. This conversation will be reassigned to another moderator.",
+      });
+    }
 
+    // Save message
     const newMessage = await Message.create({
       chat: assignment.chat._id,
+
+      // The fake profile being represented
       sender: assignment.fakeUser._id,
+
+      // The real user receiving the message
       receiver: assignment.realUser._id,
+
+      // The actual moderator who typed the message
+      moderator: moderatorId,
+
       message,
       messageType,
     });
 
+    // Record the moderator's first response
+    if (!assignment.respondedAt) {
+      await FakeAccountAssignment.findByIdAndUpdate(assignment._id, {
+        respondedAt: new Date(),
+      });
+    }
+
     const populatedMessage = await Message.findById(newMessage._id)
       .populate("sender", "fullName username photo badge")
-      .populate("receiver", "fullName username photo badge");
+      .populate("receiver", "fullName username photo badge")
+      .populate("moderator", "fullName username photo");
 
     // Update chat
     await Chat.findByIdAndUpdate(assignment.chat._id, {
