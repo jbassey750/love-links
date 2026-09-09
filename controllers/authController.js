@@ -7,7 +7,7 @@ const crypto = require("crypto");
 const OTP = require("../models/OTP");
 
 // Import email service
-const { sendOTPEmail } = require("../services/emailService");
+const { sendOTPEmail } = require("../services/emailService"); 
 
 /**
  * Generate JWT Token

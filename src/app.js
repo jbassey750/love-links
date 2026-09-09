@@ -20,6 +20,8 @@ const diaryRoutes = require("../routers/diaryRoutes");
 const datePlanRoutes = require("../routers/datePlanRoutes");
 const otpRoutes = require("../routers/otpRoutes");
 
+const moderatorStatsRoutes = require("../routers/moderatorStatsRoutes");
+
 const app = express();
 
 console.log("CLIENT_URL:", process.env.CLIENT_URL);
@@ -58,6 +60,7 @@ app.use("/api/webhooks", webhookRoutes);
 app.use("/api/users/location", updateLocationRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/moderator", moderatorRoutes);
+app.use("/api/moderator", moderatorStatsRoutes);
 app.use("/api/diary", diaryRoutes);
 app.use("/api/date-plans", datePlanRoutes);
 app.use("/api/otp", otpRoutes);

@@ -5,7 +5,7 @@ const User = require("../models/User");
 const OTP = require("../models/OTP");
 const { sendOTPEmail } = require("../services/emailService");
 
-const { generateToken } = require("../controllers/authController");
+const { generateToken } = require("./authController");
 
 // const jwt = require("jsonwebtoken");
 

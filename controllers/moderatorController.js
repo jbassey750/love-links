@@ -56,7 +56,7 @@ exports.getAssignedChats = async (req, res) => {
 
 // ======================================================
 // Moderator replies as a fake account
-// ======================================================
+// ====================================================== 
 exports.replyAsFakeUser = async (req, res) => {
   try {
     const moderatorId = req.user._id;
