@@ -3,261 +3,241 @@ const FakeAccountAssignment = require("../models/FakeAccountAssignment");
 
 /**
 
-* Convert milliseconds into readable response time.
+* Convert milliseconds into readable response time. 
   */
-  const formatDuration = (milliseconds) => {
+const formatDuration = (milliseconds) => {
   if (!milliseconds || milliseconds < 0) {
-  return "0s";
+    return "0s";
   }
 
-const totalSeconds = Math.round(milliseconds / 1000);
+  const totalSeconds = Math.round(milliseconds / 1000);
 
-const hours = Math.floor(totalSeconds / 3600);
-const minutes = Math.floor((totalSeconds % 3600) / 60);
-const seconds = totalSeconds % 60;
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
 
-if (hours > 0) {
-return `${hours}h ${minutes}m`;
-}
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
 
-if (minutes > 0) {
-return `${minutes}m ${seconds}s`;
-}
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  }
 
-return `${seconds}s`;
+  return `${seconds}s`;
 };
 
 /**
 
 * Start of local calendar day.
   */
-  const startOfDay = (date) => {
+const startOfDay = (date) => {
   const result = new Date(date);
   result.setHours(0, 0, 0, 0);
   return result;
-  };
+};
 
 /**
 
 * End of local calendar day.
   */
-  const endOfDay = (date) => {
+const endOfDay = (date) => {
   const result = new Date(date);
   result.setHours(23, 59, 59, 999);
   return result;
-  };
+};
 
 /**
 
 * Monday of current week.
   */
-  const startOfWeek = (date) => {
+const startOfWeek = (date) => {
   const result = startOfDay(date);
 
-const day = result.getDay();
-const daysFromMonday = day === 0 ? 6 : day - 1;
+  const day = result.getDay();
+  const daysFromMonday = day === 0 ? 6 : day - 1;
 
-result.setDate(result.getDate() - daysFromMonday);
+  result.setDate(result.getDate() - daysFromMonday);
 
-return result;
+  return result;
 };
 
 /**
 
 * First day of current month.
   */
-  const startOfMonth = (date) => {
+const startOfMonth = (date) => {
   const result = startOfDay(date);
   result.setDate(1);
   return result;
-  };
+};
 
 /**
 
 * Selected frontend range.
   */
-  const getDateRange = (range) => {
+const getDateRange = (range) => {
   const now = new Date();
 
-switch (range) {
-case "Yesterday": {
-const yesterday = new Date(now);
-yesterday.setDate(yesterday.getDate() - 1);
+  switch (range) {
+    case "Yesterday": {
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
 
-  return {
-    start: startOfDay(yesterday),
-    end: endOfDay(yesterday),
-  };
-}
+      return {
+        start: startOfDay(yesterday),
+        end: endOfDay(yesterday),
+      };
+    }
 
-case "Last 7 Days": {
-  const start = startOfDay(now);
-  start.setDate(start.getDate() - 6);
+    case "Last 7 Days": {
+      const start = startOfDay(now);
+      start.setDate(start.getDate() - 6);
 
-  return {
-    start,
-    end: now,
-  };
-}
+      return {
+        start,
+        end: now,
+      };
+    }
 
-case "Last 30 Days": {
-  const start = startOfDay(now);
-  start.setDate(start.getDate() - 29);
+    case "Last 30 Days": {
+      const start = startOfDay(now);
+      start.setDate(start.getDate() - 29);
 
-  return {
-    start,
-    end: now,
-  };
-}
+      return {
+        start,
+        end: now,
+      };
+    }
 
-case "Today":
-default:
-  return {
-    start: startOfDay(now),
-    end: now,
-  };
-
-}
+    case "Today":
+    default:
+      return {
+        start: startOfDay(now),
+        end: now,
+      };
+  }
 };
 
 /**
 
 * Count unique conversations.
   */
-  const getUniqueChatCount = (messages) => {
+const getUniqueChatCount = (messages) => {
   const chatIds = new Set();
 
-messages.forEach((message) => {
-if (message.chat) {
-chatIds.add(message.chat.toString());
-}
-});
+  messages.forEach((message) => {
+    if (message.chat) {
+      chatIds.add(message.chat.toString());
+    }
+  });
 
-return chatIds.size;
+  return chatIds.size;
 };
 
 /**
 
 * Calculate average response time from assignments.
   */
-  const calculateAverageResponseTime = (assignments) => {
+const calculateAverageResponseTime = (assignments) => {
   const responseTimes = assignments
-  .filter(
-  (assignment) =>
-  assignment.assignedAt &&
-  assignment.respondedAt &&
-  new Date(assignment.respondedAt) >=
-  new Date(assignment.assignedAt)
-  )
-  .map(
-  (assignment) =>
-  new Date(assignment.respondedAt).getTime() -
-  new Date(assignment.assignedAt).getTime()
-  )
-  .filter((time) => time >= 0);
+    .filter(
+      (assignment) =>
+        assignment.assignedAt &&
+        assignment.respondedAt &&
+        new Date(assignment.respondedAt) >= new Date(assignment.assignedAt),
+    )
+    .map(
+      (assignment) =>
+        new Date(assignment.respondedAt).getTime() -
+        new Date(assignment.assignedAt).getTime(),
+    )
+    .filter((time) => time >= 0);
 
-if (!responseTimes.length) {
-return {
-milliseconds: 0,
-formatted: "0s",
-};
-}
+  if (!responseTimes.length) {
+    return {
+      milliseconds: 0,
+      formatted: "0s",
+    };
+  }
 
-const total = responseTimes.reduce(
-(sum, time) => sum + time,
-0
-);
+  const total = responseTimes.reduce((sum, time) => sum + time, 0);
 
-const average = total / responseTimes.length;
+  const average = total / responseTimes.length;
 
-return {
-milliseconds: average,
-formatted: formatDuration(average),
-};
+  return {
+    milliseconds: average,
+    formatted: formatDuration(average),
+  };
 };
 
 /**
 
 * Calculate active hours from assignment periods.
   */
-  const calculateActiveHours = (periods) => {
+const calculateActiveHours = (periods) => {
   if (!periods.length) {
-  return 0;
+    return 0;
   }
 
-const sortedPeriods = [...periods].sort(
-(a, b) => a.start.getTime() - b.start.getTime()
-);
+  const sortedPeriods = [...periods].sort(
+    (a, b) => a.start.getTime() - b.start.getTime(),
+  );
 
-const merged = [];
+  const merged = [];
 
-for (const period of sortedPeriods) {
-if (!merged.length) {
-merged.push({
-start: period.start,
-end: period.end,
-});
+  for (const period of sortedPeriods) {
+    if (!merged.length) {
+      merged.push({
+        start: period.start,
+        end: period.end,
+      });
 
-  continue;
-}
+      continue;
+    }
 
-const last = merged[merged.length - 1];
+    const last = merged[merged.length - 1];
 
-if (
-  period.start.getTime() <=
-  last.end.getTime()
-) {
-  if (
-    period.end.getTime() >
-    last.end.getTime()
-  ) {
-    last.end = period.end;
+    if (period.start.getTime() <= last.end.getTime()) {
+      if (period.end.getTime() > last.end.getTime()) {
+        last.end = period.end;
+      }
+    } else {
+      merged.push({
+        start: period.start,
+        end: period.end,
+      });
+    }
   }
-} else {
-  merged.push({
-    start: period.start,
-    end: period.end,
-  });
-}
 
-}
+  const milliseconds = merged.reduce(
+    (total, period) => total + (period.end.getTime() - period.start.getTime()),
+    0,
+  );
 
-const milliseconds = merged.reduce(
-(total, period) =>
-total +
-(period.end.getTime() -
-period.start.getTime()),
-0
-);
-
-return milliseconds / 3600000;
+  return milliseconds / 3600000;
 };
 
 /**
 
 * GET /api/moderator/stats
   */
-  const getModeratorStats = async (req, res) => {
+const getModeratorStats = async (req, res) => {
   try {
-  const range = req.query.range || "Today";
+    const range = req.query.range || "Today";
 
-  const allowedRanges = [
-  "Today",
-  "Yesterday",
-  "Last 7 Days",
-  "Last 30 Days",
-  ];
+    const allowedRanges = ["Today", "Yesterday", "Last 7 Days", "Last 30 Days"];
 
-  if (!allowedRanges.includes(range)) {
-  return res.status(400).json({
-  success: false,
-  message: "Invalid statistics range.",
-  });
-  }
+    if (!allowedRanges.includes(range)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid statistics range.",
+      });
+    }
 
-  const now = new Date();
+    const now = new Date();
 
-  /*
+    /*
 
   * ---
   * DATE RANGES
@@ -265,21 +245,23 @@ return milliseconds / 3600000;
 
   */
 
-  const selectedRange = getDateRange(range);
+    const selectedRange = getDateRange(range);
 
-  const todayStart = startOfDay(now);
-  const todayEnd = endOfDay(now);
+    const todayStart = startOfDay(now);
+    const todayEnd = endOfDay(now);
 
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
 
-  const yesterdayStart = startOfDay(yesterday);
-  const yesterdayEnd = endOfDay(yesterday);
+    const yesterdayStart = startOfDay(yesterday);
+    const yesterdayEnd = endOfDay(yesterday);
 
-  const weekStart = startOfWeek(now);
-  const monthStart = startOfMonth(now);
+    const weekStart = startOfWeek(now);
+    weekStart.setDate(weekStart.getDate() - 6);
 
-  /*
+    const monthStart = startOfMonth(now);
+
+    /*
 
   * ---
   * LOAD ASSIGNMENTS
@@ -287,23 +269,13 @@ return milliseconds / 3600000;
 
   */
 
-  const assignments =
-  await FakeAccountAssignment.find({})
-  .populate(
-  "moderator",
-  "fullName username role"
-  )
-  .populate(
-  "fakeUser",
-  "fullName username age accountType photo"
-  )
-  .populate(
-  "realUser",
-  "fullName username role"
-  )
-  .lean();
+    const assignments = await FakeAccountAssignment.find({})
+      .populate("moderator", "fullName username role")
+      .populate("fakeUser", "fullName username age accountType photo")
+      .populate("realUser", "fullName username role")
+      .lean();
 
-  /*
+    /*
 
   * ---
   * LOAD ALL MESSAGES
@@ -311,21 +283,13 @@ return milliseconds / 3600000;
 
   */
 
-  const allMessages = await Message.find({})
-  .select(
-  "chat sender receiver moderator createdAt messageType"
-  )
-  .populate(
-  "sender",
-  "fullName username age accountType photo"
-  )
-  .populate(
-  "moderator",
-  "fullName username role"
-  )
-  .lean();
+    const allMessages = await Message.find({})
+      .select("chat sender receiver moderator createdAt messageType")
+      .populate("sender", "fullName username age accountType photo")
+      .populate("moderator", "fullName username role")
+      .lean();
 
-  /*
+    /*
 
   * ---
   * DATE FILTER HELPER
@@ -333,20 +297,19 @@ return milliseconds / 3600000;
 
   */
 
-  const messagesBetween = (start, end) => {
-  return allMessages.filter((message) => {
-  if (!message.createdAt) {
-  return false;
-  }
+    const messagesBetween = (start, end) => {
+      return allMessages.filter((message) => {
+        if (!message.createdAt) {
+          return false;
+        }
 
-   const date = new Date(message.createdAt);
+        const date = new Date(message.createdAt);
 
-   return date >= start && date <= end;
+        return date >= start && date <= end;
+      });
+    };
 
-  });
-  };
-
-  /*
+    /*
 
   * ---
   * MESSAGE ACTIVITY
@@ -354,32 +317,20 @@ return milliseconds / 3600000;
 
   */
 
-  const todayMessages = messagesBetween(
-  todayStart,
-  todayEnd
-  );
+    const todayMessages = messagesBetween(todayStart, todayEnd);
 
-  const yesterdayMessages = messagesBetween(
-  yesterdayStart,
-  yesterdayEnd
-  );
+    const yesterdayMessages = messagesBetween(yesterdayStart, yesterdayEnd);
 
-  const weekMessages = messagesBetween(
-  weekStart,
-  now
-  );
+    const weekMessages = messagesBetween(weekStart, now);
 
-  const monthMessages = messagesBetween(
-  monthStart,
-  now
-  );
+    const monthMessages = messagesBetween(monthStart, now);
 
-  const selectedMessages = messagesBetween(
-  selectedRange.start,
-  selectedRange.end
-  );
+    const selectedMessages = messagesBetween(
+      selectedRange.start,
+      selectedRange.end,
+    );
 
-  /*
+    /*
 
   * ---
   * SUMMARY
@@ -387,22 +338,28 @@ return milliseconds / 3600000;
 
   */
 
-  const todayChats =
-  getUniqueChatCount(todayMessages);
+    const todayChats = getUniqueChatCount(todayMessages);
 
-  const yesterdayChats =
-  getUniqueChatCount(yesterdayMessages);
+    const yesterdayChats = getUniqueChatCount(yesterdayMessages);
 
-  const thisWeekChats =
-  getUniqueChatCount(weekMessages);
+    const thisWeekChats = getUniqueChatCount(weekMessages);
 
-  const thisMonthChats =
-  getUniqueChatCount(monthMessages);
+    const thisMonthChats = getUniqueChatCount(monthMessages);
 
-  const totalChats =
-  getUniqueChatCount(allMessages);
+    const totalChats = getUniqueChatCount(allMessages);
 
-  /*
+    // Message counts
+    const todayMessageCount = todayMessages.length;
+
+    const yesterdayMessageCount = yesterdayMessages.length;
+
+    const thisWeekMessageCount = weekMessages.length;
+
+    const thisMonthMessageCount = monthMessages.length;
+
+    const totalMessageCount = allMessages.length;
+
+    /*
 
   * ---
   * RESPONSE TIME
@@ -418,28 +375,21 @@ return milliseconds / 3600000;
   * This response belongs to September 6.
     */
 
-  const rangeAssignments =
-  assignments.filter((assignment) => {
-  if (!assignment.respondedAt) {
-  return false;
-  }
+    const rangeAssignments = assignments.filter((assignment) => {
+      if (!assignment.respondedAt) {
+        return false;
+      }
 
-   const respondedAt =
-     new Date(assignment.respondedAt);
+      const respondedAt = new Date(assignment.respondedAt);
 
-   return (
-     respondedAt >= selectedRange.start &&
-     respondedAt <= selectedRange.end
-   );
+      return (
+        respondedAt >= selectedRange.start && respondedAt <= selectedRange.end
+      );
+    });
 
-  });
+    const averageResponse = calculateAverageResponseTime(rangeAssignments);
 
-  const averageResponse =
-  calculateAverageResponseTime(
-  rangeAssignments
-  );
-
-  /*
+    /*
 
   * ---
   * ACTIVE / CLOSED CONVERSATIONS
@@ -447,51 +397,43 @@ return milliseconds / 3600000;
 
   */
 
-  const activeAssignments =
-  assignments.filter(
-  (assignment) =>
-  assignment.status === "active"
-  );
+    const activeAssignments = assignments.filter(
+      (assignment) => assignment.status === "active",
+    );
 
-  const closedAssignments =
-  assignments.filter(
-  (assignment) =>
-  assignment.status === "closed"
-  );
+    const closedAssignments = assignments.filter(
+      (assignment) => assignment.status === "closed",
+    );
 
-  const activeChatIds = new Set();
+    const activeChatIds = new Set();
 
-  activeAssignments.forEach((assignment) => {
-  if (assignment.chat) {
-  activeChatIds.add(
-  assignment.chat.toString()
-  );
-  }
-  });
+    activeAssignments.forEach((assignment) => {
+      if (assignment.chat) {
+        activeChatIds.add(assignment.chat.toString());
+      }
+    });
 
-  const closedChatIds = new Set();
+    const closedChatIds = new Set();
 
-  closedAssignments.forEach((assignment) => {
-  if (assignment.chat) {
-  closedChatIds.add(
-  assignment.chat.toString()
-  );
-  }
-  });
+    closedAssignments.forEach((assignment) => {
+      if (assignment.chat) {
+        closedChatIds.add(assignment.chat.toString());
+      }
+    });
 
-  /*
+    /*
 
   * If a chat exists in both lists,
   * active takes priority.
     */
 
-  closedChatIds.forEach((chatId) => {
-  if (activeChatIds.has(chatId)) {
-  closedChatIds.delete(chatId);
-  }
-  });
+    closedChatIds.forEach((chatId) => {
+      if (activeChatIds.has(chatId)) {
+        closedChatIds.delete(chatId);
+      }
+    });
 
-  /*
+    /*
 
   * ---
   * CHATS PER DAY
@@ -499,54 +441,98 @@ return milliseconds / 3600000;
 
   */
 
-  const chatsPerDay = [];
+    // const chatsPerDay = [];
 
-  let chartDays = 1;
+    // let chartDays = 1;
 
-  if (range === "Last 7 Days") {
-  chartDays = 7;
-  }
+    // if (range === "Last 7 Days") {
+      // chartDays = 7;
+    // }
 
-  if (range === "Last 30 Days") {
-  chartDays = 30;
-  }
+    // if (range === "Last 30 Days") {
+      // chartDays = 30;
+    // }
 
-  for (let i = chartDays - 1; i >= 0; i--) {
-  const date = new Date(now);
+    // for (let i = chartDays - 1; i >= 0; i--) {
+      // const date = new Date(now);
 
-  date.setDate(date.getDate() - i);
+      // date.setDate(date.getDate() - i);
 
-  const dayStart = startOfDay(date);
-  const dayEnd = endOfDay(date);
+      // const dayStart = startOfDay(date);
+      // const dayEnd = endOfDay(date);
 
-  const dayMessages = messagesBetween(
-  dayStart,
-  dayEnd
-  );
+      // const dayMessages = messagesBetween(dayStart, dayEnd);
 
-  chatsPerDay.push({
-  date: dayStart.toISOString(),
+      // chatsPerDay.push({
+        // date: dayStart.toISOString(),
 
-   label:
-     chartDays === 30
-       ? `${dayStart.getDate()}/${
-           dayStart.getMonth() + 1
-         }`
-       : dayStart.toLocaleDateString(
-           "en-US",
-           {
-             weekday: "short",
-           }
-         ),
+        // label:
+          // chartDays === 30
+            // ? `${dayStart.getDate()}/${dayStart.getMonth() + 1}`
+            // : dayStart.toLocaleDateString("en-US", {
+                // weekday: "short",
+              // }),
 
-   chats: getUniqueChatCount(
-     dayMessages
-   ),
+        // chats: getUniqueChatCount(dayMessages),
+      // });
+    // }
 
-  });
-  }
+    /*
+     * ---
+     * MESSAGES PER DAY + CHATS PER DAY
+     * ---
+     */
 
-  /*
+    const messagesPerDay = [];
+    const chatsPerDay = [];
+
+    let chartStart = new Date(selectedRange.start);
+    let chartEnd = new Date(selectedRange.end);
+
+    // Build one point for every day in the selected range
+    let currentDay = startOfDay(chartStart);
+
+    while (currentDay <= chartEnd) {
+      const dayStart = startOfDay(currentDay);
+      const dayEnd = endOfDay(currentDay);
+
+      // Don't go beyond the selected range
+      const effectiveStart =
+        dayStart < selectedRange.start ? selectedRange.start : dayStart;
+
+      const effectiveEnd =
+        dayEnd > selectedRange.end ? selectedRange.end : dayEnd;
+
+      const dayMessages = messagesBetween(effectiveStart, effectiveEnd);
+      const uniqueChatsForDay = new Set(
+        dayMessages
+          .filter((message) => message.chat)
+          .map((message) => message.chat.toString()),
+      );
+
+      const label =
+        range === "Last 30 Days"
+          ? `${dayStart.getDate()}/${dayStart.getMonth() + 1}`
+          : dayStart.toLocaleDateString("en-US", {
+              weekday: "short",
+            });
+
+      messagesPerDay.push({
+        date: dayStart.toISOString(),
+        label,
+        messages: dayMessages.length,
+      });
+
+      chatsPerDay.push({
+        date: dayStart.toISOString(),
+        label,
+        chats: uniqueChatsForDay.size,
+      });
+
+      currentDay.setDate(currentDay.getDate() + 1);
+    }
+
+    /*
 
   * ---
   * FAKE ACCOUNT PERFORMANCE
@@ -564,144 +550,117 @@ return milliseconds / 3600000;
   * moderator !== null
     */
 
-  const fakeAccountMap = new Map();
+    const fakeAccountMap = new Map();
 
-  selectedMessages.forEach((message) => {
-  if (!message.sender) {
-  return;
-  }
+    selectedMessages.forEach((message) => {
+      if (!message.sender) {
+        return;
+      }
 
-  const sender = message.sender;
+      const sender = message.sender;
 
-  if (sender.accountType !== "fake") {
-  return;
-  }
+      if (sender.accountType !== "fake") {
+        return;
+      }
 
-  const fakeId = sender._id.toString();
+      const fakeId = sender._id.toString();
 
-  if (!fakeAccountMap.has(fakeId)) {
-  fakeAccountMap.set(fakeId, {
-  id: fakeId,
-  name:
-  sender.fullName ||
-  sender.username ||
-  "Unknown",
-  age: sender.age || null,
-  chatIds: new Set(),
-  replies: 0,
-  responseTimes: [],
-  });
-  }
+      if (!fakeAccountMap.has(fakeId)) {
+        fakeAccountMap.set(fakeId, {
+          id: fakeId,
+          name: sender.fullName || sender.username || "Unknown",
+          age: sender.age || null,
+          chatIds: new Set(),
+          replies: 0,
+          responseTimes: [],
+        });
+      }
 
-  const fakeAccount =
-  fakeAccountMap.get(fakeId);
+      const fakeAccount = fakeAccountMap.get(fakeId);
 
-  if (message.chat) {
-  fakeAccount.chatIds.add(
-  message.chat.toString()
-  );
-  }
+      if (message.chat) {
+        fakeAccount.chatIds.add(message.chat.toString());
+      }
 
-  if (message.moderator) {
-  fakeAccount.replies += 1;
-  }
-  });
+      if (message.moderator) {
+        fakeAccount.replies += 1;
+      }
+    });
 
-  /*
+    /*
 
   * Add response time to fake accounts.
     */
 
-  rangeAssignments.forEach((assignment) => {
-  if (!assignment.fakeUser) {
-  return;
-  }
+    rangeAssignments.forEach((assignment) => {
+      if (!assignment.fakeUser) {
+        return;
+      }
 
-  const fakeId =
-  assignment.fakeUser._id.toString();
+      const fakeId = assignment.fakeUser._id.toString();
 
-  if (!fakeAccountMap.has(fakeId)) {
-  fakeAccountMap.set(fakeId, {
-  id: fakeId,
-  name:
-  assignment.fakeUser.fullName ||
-  assignment.fakeUser.username ||
-  "Unknown",
-  age:
-  assignment.fakeUser.age || null,
-  chatIds: new Set(),
-  replies: 0,
-  responseTimes: [],
-  });
-  }
+      if (!fakeAccountMap.has(fakeId)) {
+        fakeAccountMap.set(fakeId, {
+          id: fakeId,
+          name:
+            assignment.fakeUser.fullName ||
+            assignment.fakeUser.username ||
+            "Unknown",
+          age: assignment.fakeUser.age || null,
+          chatIds: new Set(),
+          replies: 0,
+          responseTimes: [],
+        });
+      }
 
-  const fakeAccount =
-  fakeAccountMap.get(fakeId);
+      const fakeAccount = fakeAccountMap.get(fakeId);
 
-  if (
-  assignment.assignedAt &&
-  assignment.respondedAt
-  ) {
-  const responseTime =
-  new Date(
-  assignment.respondedAt
-  ).getTime() -
-  new Date(
-  assignment.assignedAt
-  ).getTime();
+      if (assignment.assignedAt && assignment.respondedAt) {
+        const responseTime =
+          new Date(assignment.respondedAt).getTime() -
+          new Date(assignment.assignedAt).getTime();
 
-   if (responseTime >= 0) {
-     fakeAccount.responseTimes.push(
-       responseTime
-     );
-   }
+        if (responseTime >= 0) {
+          fakeAccount.responseTimes.push(responseTime);
+        }
+      }
+    });
 
-  }
-  });
+    const fakeAccounts = Array.from(fakeAccountMap.values()).map(
+      (fakeAccount) => {
+        const responseTimes = fakeAccount.responseTimes;
 
-  const fakeAccounts = Array.from(
-  fakeAccountMap.values()
-  ).map((fakeAccount) => {
-  const responseTimes =
-  fakeAccount.responseTimes;
+        const average =
+          responseTimes.length > 0
+            ? responseTimes.reduce((sum, time) => sum + time, 0) /
+              responseTimes.length
+            : 0;
 
-  const average =
-  responseTimes.length > 0
-  ? responseTimes.reduce(
-  (sum, time) =>
-  sum + time,
-  0
-  ) / responseTimes.length
-  : 0;
+        return {
+          id: fakeAccount.id,
 
-  return {
-  id: fakeAccount.id,
+          name: fakeAccount.age
+            ? `${fakeAccount.name}, ${fakeAccount.age}`
+            : fakeAccount.name,
 
-   name: fakeAccount.age
-     ? `${fakeAccount.name}, ${fakeAccount.age}`
-     : fakeAccount.name,
+          chats: fakeAccount.chatIds.size,
 
-   chats:
-     fakeAccount.chatIds.size,
+          replies: fakeAccount.replies,
 
-   replies:
-     fakeAccount.replies,
+          respTime: formatDuration(average),
+        };
+      },
+    );
 
-   respTime:
-     formatDuration(average),
+    fakeAccounts.sort((a, b) => {
+      if (b.replies !== a.replies) {
+        return b.replies - a.replies;
+      }
 
-  };
-  });
+      return b.chats - a.chats;
+    });
 
-  fakeAccounts.sort((a, b) => {
-  if (b.replies !== a.replies) {
-  return b.replies - a.replies;
-  }
-
-  return b.chats - a.chats;
-  });
-
-  /*
+    /*
 
   * ---
   * MODERATOR PERFORMANCE
@@ -709,9 +668,9 @@ return milliseconds / 3600000;
 
   */
 
-  const moderatorMap = new Map();
+    const moderatorMap = new Map();
 
-  /*
+    /*
 
   * First add moderators from actual messages.
   *
@@ -719,161 +678,114 @@ return milliseconds / 3600000;
   * have started before the selected date.
     */
 
-  const rangeModeratorMessages =
-  selectedMessages.filter(
-  (message) =>
-  message.moderator
-  );
+    const rangeModeratorMessages = selectedMessages.filter(
+      (message) => message.moderator,
+    );
 
-  rangeModeratorMessages.forEach(
-  (message) => {
-  const moderator =
-  message.moderator;
+    rangeModeratorMessages.forEach((message) => {
+      const moderator = message.moderator;
 
+      if (!moderator) {
+        return;
+      }
 
-   if (!moderator) {
-     return;
-   }
+      const moderatorId = moderator._id.toString();
 
-   const moderatorId =
-     moderator._id.toString();
+      if (!moderatorMap.has(moderatorId)) {
+        moderatorMap.set(moderatorId, {
+          id: moderatorId,
 
-   if (!moderatorMap.has(moderatorId)) {
-     moderatorMap.set(
-       moderatorId,
-       {
-         id: moderatorId,
+          name: moderator.fullName || moderator.username || "Unknown",
 
-         name:
-           moderator.fullName ||
-           moderator.username ||
-           "Unknown",
+          chats: new Set(),
 
-         chats: new Set(),
+          replies: 0,
 
-         replies: 0,
+          responseTimes: [],
 
-         responseTimes: [],
+          activePeriods: [],
+        });
+      }
 
-         activePeriods: [],
-       }
-     );
-   }
+      const moderatorRecord = moderatorMap.get(moderatorId);
 
-   const moderatorRecord =
-     moderatorMap.get(
-       moderatorId
-     );
+      if (message.chat) {
+        moderatorRecord.chats.add(message.chat.toString());
+      }
 
-   if (message.chat) {
-     moderatorRecord.chats.add(
-       message.chat.toString()
-     );
-   }
+      moderatorRecord.replies += 1;
+    });
 
-   moderatorRecord.replies += 1;
-
-  }
-  );
-
-  /*
+    /*
 
   * Add assignment information.
     */
 
-  rangeAssignments.forEach(
-  (assignment) => {
-  if (!assignment.moderator) {
-  return;
-  }
+    rangeAssignments.forEach((assignment) => {
+      if (!assignment.moderator) {
+        return;
+      }
 
-   const moderatorId =
-     assignment.moderator._id.toString();
+      const moderatorId = assignment.moderator._id.toString();
 
-   if (!moderatorMap.has(moderatorId)) {
-     moderatorMap.set(
-       moderatorId,
-       {
-         id: moderatorId,
+      if (!moderatorMap.has(moderatorId)) {
+        moderatorMap.set(moderatorId, {
+          id: moderatorId,
 
-         name:
-           assignment.moderator.fullName ||
-           assignment.moderator.username ||
-           "Unknown",
+          name:
+            assignment.moderator.fullName ||
+            assignment.moderator.username ||
+            "Unknown",
 
-         chats: new Set(),
+          chats: new Set(),
 
-         replies: 0,
+          replies: 0,
 
-         responseTimes: [],
+          responseTimes: [],
 
-         activePeriods: [],
-       }
-     );
-   }
+          activePeriods: [],
+        });
+      }
 
-   const moderator =
-     moderatorMap.get(
-       moderatorId
-     );
+      const moderator = moderatorMap.get(moderatorId);
 
-   if (assignment.chat) {
-     moderator.chats.add(
-       assignment.chat.toString()
-     );
-   }
+      if (assignment.chat) {
+        moderator.chats.add(assignment.chat.toString());
+      }
 
-   if (
-     assignment.assignedAt &&
-     assignment.respondedAt
-   ) {
-     const responseTime =
-       new Date(
-         assignment.respondedAt
-       ).getTime() -
-       new Date(
-         assignment.assignedAt
-       ).getTime();
+      if (assignment.assignedAt && assignment.respondedAt) {
+        const responseTime =
+          new Date(assignment.respondedAt).getTime() -
+          new Date(assignment.assignedAt).getTime();
 
-     if (responseTime >= 0) {
-       moderator.responseTimes.push(
-         responseTime
-       );
-     }
-   }
+        if (responseTime >= 0) {
+          moderator.responseTimes.push(responseTime);
+        }
+      }
 
-   /*
-    * Calculate assignment active period.
-    */
+      /*
+       * Calculate assignment active period.
+       */
 
-   if (assignment.assignedAt) {
-     const start = new Date(
-       assignment.assignedAt
-     );
+      if (assignment.assignedAt) {
+        const start = new Date(assignment.assignedAt);
 
-     const end = assignment.releasedAt
-       ? new Date(
-           assignment.releasedAt
-         )
-       : assignment.respondedAt
-         ? new Date(
-             assignment.respondedAt
-           )
-         : now;
+        const end = assignment.releasedAt
+          ? new Date(assignment.releasedAt)
+          : assignment.respondedAt
+            ? new Date(assignment.respondedAt)
+            : now;
 
-     if (end > start) {
-       moderator.activePeriods.push({
-         start,
-         end,
-       });
-     }
-   }
+        if (end > start) {
+          moderator.activePeriods.push({
+            start,
+            end,
+          });
+        }
+      }
+    });
 
-
-  }
-  );
-
-  /*
+    /*
 
   * ---
   * BUILD MODERATOR RESULTS
@@ -881,49 +793,33 @@ return milliseconds / 3600000;
 
   */
 
-  const moderators = Array.from(
-  moderatorMap.values()
-  ).map((moderator) => {
-  const responseTimes =
-  moderator.responseTimes;
+    const moderators = Array.from(moderatorMap.values()).map((moderator) => {
+      const responseTimes = moderator.responseTimes;
 
-  const average =
-  responseTimes.length > 0
-  ? responseTimes.reduce(
-  (sum, time) =>
-  sum + time,
-  0
-  ) / responseTimes.length
-  : 0;
+      const average =
+        responseTimes.length > 0
+          ? responseTimes.reduce((sum, time) => sum + time, 0) /
+            responseTimes.length
+          : 0;
 
-  const activeHours =
-  calculateActiveHours(
-  moderator.activePeriods
-  );
+      const activeHours = calculateActiveHours(moderator.activePeriods);
 
-  return {
-  id: moderator.id,
+      return {
+        id: moderator.id,
 
-   name: moderator.name,
+        name: moderator.name,
 
-   chats:
-     moderator.chats.size,
+        chats: moderator.chats.size,
 
-   replies:
-     moderator.replies,
+        replies: moderator.replies,
 
-   respTime:
-     formatDuration(average),
+        respTime: formatDuration(average),
 
-   activeHours:
-     activeHours > 0
-       ? `${activeHours.toFixed(1)}h`
-       : "0h",
+        activeHours: activeHours > 0 ? `${activeHours.toFixed(1)}h` : "0h",
+      };
+    });
 
-  };
-  });
-
-  /*
+    /*
 
   * ---
   * MARK CURRENT MODERATOR
@@ -931,22 +827,15 @@ return milliseconds / 3600000;
 
   */
 
-  const currentModeratorId =
-  req.user?._id
-  ? req.user._id.toString()
-  : null;
+    const currentModeratorId = req.user?._id ? req.user._id.toString() : null;
 
-  moderators.forEach((moderator) => {
-  if (
-  currentModeratorId &&
-  moderator.id ===
-  currentModeratorId
-  ) {
-  moderator.name += " (You)";
-  }
-  });
+    moderators.forEach((moderator) => {
+      if (currentModeratorId && moderator.id === currentModeratorId) {
+        moderator.name += " (You)";
+      }
+    });
 
-  /*
+    /*
 
   * ---
   * SORT MODERATORS
@@ -954,17 +843,15 @@ return milliseconds / 3600000;
 
   */
 
-  moderators.sort((a, b) => {
-  if (b.chats !== a.chats) {
-  return b.chats - a.chats;
-  }
+    moderators.sort((a, b) => {
+      if (b.chats !== a.chats) {
+        return b.chats - a.chats;
+      }
 
-  return a.name.localeCompare(
-  b.name
-  );
-  });
+      return a.name.localeCompare(b.name);
+    });
 
-  /*
+    /*
 
   * ---
   * RESPONSE
@@ -972,77 +859,68 @@ return milliseconds / 3600000;
 
   */
 
-  return res.status(200).json({
-  success: true,
+    return res.status(200).json({
+      success: true,
 
-  range,
+      range,
 
-  summary: {
-  today: todayChats,
+      summary: {
+        // Chat statistics
+        today: todayChats,
+        yesterday: yesterdayChats,
+        thisWeek: thisWeekChats,
+        thisMonth: thisMonthChats,
+        total: totalChats,
 
-   yesterday: yesterdayChats,
+        // Message statistics
+        todayMessages: todayMessageCount,
+        yesterdayMessages: yesterdayMessageCount,
+        thisWeekMessages: thisWeekMessageCount,
+        thisMonthMessages: thisMonthMessageCount,
+        totalMessages: totalMessageCount,
 
-   thisWeek: thisWeekChats,
+        // Other statistics
+        avgResponseTime: averageResponse.formatted,
 
-   thisMonth: thisMonthChats,
+        activeConvos: activeChatIds.size,
 
-   total: totalChats,
+        closedConvos: closedChatIds.size,
+      },
 
-   avgResponseTime:
-     averageResponse.formatted,
+      charts: {
+        messagesPerDay,
+        chatsPerDay,
 
-   activeConvos:
-     activeChatIds.size,
+        conversationStatus: [
+          {
+            label: "Active",
+            value: activeChatIds.size,
+          },
 
-   closedConvos:
-     closedChatIds.size,
+          {
+            label: "Closed",
+            value: closedChatIds.size,
+          },
+        ],
+      },
 
-  },
+      fakeAccounts,
 
-  charts: {
-  chatsPerDay,
-
-   conversationStatus: [
-     {
-       label: "Active",
-       value:
-         activeChatIds.size,
-     },
-
-     {
-       label: "Closed",
-       value:
-         closedChatIds.size,
-     },
-   ],
-
-  },
-
-  fakeAccounts,
-
-  moderators,
-  });
+      moderators,
+    });
   } catch (error) {
-  console.error(
-  "❌ Get moderator statistics error:",
-  error
-  );
+    console.error("❌ Get moderator statistics error:", error);
 
-  return res.status(500).json({
-  success: false,
+    return res.status(500).json({
+      success: false,
 
-  message:
-  "Failed to load moderator statistics.",
+      message: "Failed to load moderator statistics.",
 
-  error:
-  process.env.NODE_ENV ===
-  "development"
-  ? error.message
-  : undefined,
-  });
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
   }
-  };
+};
 
 module.exports = {
-getModeratorStats,
+  getModeratorStats,
 };
