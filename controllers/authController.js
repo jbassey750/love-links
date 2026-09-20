@@ -332,10 +332,14 @@ exports.login = async (req, res) => {
   try {
     let { email, password } = req.body;
 
-    // ===============================
-    // Validate
-    // ===============================
+    console.log("[AUTH] login request received", {
+      hasEmail: Boolean(email),
+      hasPassword: Boolean(password),
+      emailProvided: email ? String(email).trim() : "",
+    });
+
     if (!email || !password) {
+      console.warn("[AUTH] login rejected: missing credentials");
       return res.status(400).json({
         success: false,
         message: "Email and password are required.",
@@ -344,37 +348,44 @@ exports.login = async (req, res) => {
 
     email = email.toLowerCase().trim();
 
-    // ===============================
-    // Find User
-    // ===============================
+    console.log("[AUTH] searching user in MongoDB", { email });
     const user = await User.findOne({ email });
 
     if (!user) {
+      console.warn("[AUTH] login failed: user not found", { email });
       return res.status(401).json({
         success: false,
         message: "Invalid email or password.",
       });
     }
 
-    // ===============================
-    // Compare Password
-    // ===============================
+    console.log("[AUTH] user found; verifying password", {
+      userId: user._id,
+      role: user.role,
+      accountType: user.accountType,
+    });
+
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
+      console.warn("[AUTH] login failed: password mismatch", { userId: user._id });
       return res.status(401).json({
         success: false,
         message: "Invalid email or password.",
       });
     }
 
-    // Only real users and premium users must complete login OTP.
     const requiresOTP =
       user.accountType !== "fake" &&
       ["user", "premium"].includes(user.role);
 
     if (!requiresOTP) {
-      const token = generateToken(user); // pass the whole user object, not user._id
+      const token = generateToken(user);
+
+      console.log("[AUTH] login successful without OTP", {
+        userId: user._id,
+        role: user.role,
+      });
 
       return res.status(200).json({
         success: true,
@@ -396,18 +407,30 @@ exports.login = async (req, res) => {
     });
 
     if (existingOTP) {
+      console.warn("[AUTH] login requires OTP but an active OTP already exists", {
+        userId: user._id,
+        otpId: existingOTP._id,
+      });
+
       return res.status(429).json({
         success: false,
         message:
           "A verification code has already been sent. Please check your email.",
         requiresOTP: true,
         userId: user._id,
+        email: user.email,
+        fullName: user.fullName,
       });
     }
 
     const otpCode = crypto.randomInt(100000, 1000000).toString();
     const otpHash = await bcrypt.hash(otpCode, 10);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    console.log("[AUTH] creating OTP record for user", {
+      userId: user._id,
+      expiresAt,
+    });
 
     await OTP.create({
       user: user._id,
@@ -417,10 +440,25 @@ exports.login = async (req, res) => {
       attempts: 0,
     });
 
-    await sendOTPEmail({
+    try {
+      console.log("[AUTH] sending OTP email", { userId: user._id, email: user.email });
+      await sendOTPEmail({
+        email: user.email,
+        fullName: user.fullName,
+        otp: otpCode,
+      });
+    } catch (emailError) {
+      console.error("[AUTH] OTP email send failed", emailError);
+      return res.status(500).json({
+        success: false,
+        message: "Login failed because the verification email could not be sent.",
+        requiresOTP: false,
+      });
+    }
+
+    console.log("[AUTH] OTP required response sent to frontend", {
+      userId: user._id,
       email: user.email,
-      fullName: user.fullName,
-      otp: otpCode,
     });
 
     return res.status(200).json({
@@ -429,14 +467,15 @@ exports.login = async (req, res) => {
         "Login successful. A verification code has been sent to your email.",
       requiresOTP: true,
       userId: user._id,
-      email: user.email.replace(/^(.{2}).*(@.*)$/, "$1****$2"),
+      email: user.email,
+      fullName: user.fullName,
     });
   } catch (error) {
-    console.error("Login Error:", error);
+    console.error("[AUTH] Login Error:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Login failed. Please try again.",
+      message: error.message || "Login failed. Please try again.",
     });
   }
 };

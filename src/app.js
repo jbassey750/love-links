@@ -34,6 +34,23 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+app.use((req, res, next) => {
+  console.log("[Backend] request", {
+    method: req.method,
+    url: req.originalUrl,
+    origin: req.headers.origin,
+  });
+
+  res.on("finish", () => {
+    console.log("[Backend] response", {
+      method: req.method,
+      url: req.originalUrl,
+      status: res.statusCode,
+    });
+  });
+
+  next();
+});
 app.use(express.json());
 
 app.use(express.urlencoded({ extended: true }));
