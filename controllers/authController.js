@@ -7,7 +7,7 @@ const crypto = require("crypto");
 const OTP = require("../models/OTP");
 
 // Import email service
-const { sendOTPEmail } = require("../services/emailService"); 
+const { sendOTPEmail } = require("../services/emailService");
 
 /**
  * Generate JWT Token
@@ -368,16 +368,31 @@ exports.login = async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
-      console.warn("[AUTH] login failed: password mismatch", { userId: user._id });
+      console.warn("[AUTH] login failed: password mismatch", {
+        userId: user._id,
+      });
+
       return res.status(401).json({
         success: false,
         message: "Invalid email or password.",
       });
     }
 
+    // Moderators must use the dedicated moderator login
+    if (user.role === "moderator") {
+      console.warn("[AUTH] moderator attempted normal login", {
+        userId: user._id,
+        email: user.email,
+      });
+
+      return res.status(403).json({
+        success: false,
+        message: "Moderators must use the moderator login portal.",
+      });
+    }
+
     const requiresOTP =
-      user.accountType !== "fake" &&
-      ["user", "premium"].includes(user.role);
+      user.accountType !== "fake" && ["user", "premium"].includes(user.role);
 
     if (!requiresOTP) {
       const token = generateToken(user);
@@ -407,10 +422,13 @@ exports.login = async (req, res) => {
     });
 
     if (existingOTP) {
-      console.warn("[AUTH] login requires OTP but an active OTP already exists", {
-        userId: user._id,
-        otpId: existingOTP._id,
-      });
+      console.warn(
+        "[AUTH] login requires OTP but an active OTP already exists",
+        {
+          userId: user._id,
+          otpId: existingOTP._id,
+        },
+      );
 
       return res.status(429).json({
         success: false,
@@ -441,7 +459,10 @@ exports.login = async (req, res) => {
     });
 
     try {
-      console.log("[AUTH] sending OTP email", { userId: user._id, email: user.email });
+      console.log("[AUTH] sending OTP email", {
+        userId: user._id,
+        email: user.email,
+      });
       await sendOTPEmail({
         email: user.email,
         fullName: user.fullName,
@@ -451,7 +472,8 @@ exports.login = async (req, res) => {
       console.error("[AUTH] OTP email send failed", emailError);
       return res.status(500).json({
         success: false,
-        message: "Login failed because the verification email could not be sent.",
+        message:
+          "Login failed because the verification email could not be sent.",
         requiresOTP: false,
       });
     }
@@ -476,6 +498,112 @@ exports.login = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message || "Login failed. Please try again.",
+    });
+  }
+};
+
+// =====================================================
+// MODERATOR LOGIN
+// POST /api/auth/moderator-login
+// Moderators do NOT use OTP
+// =====================================================
+exports.moderatorLogin = async (req, res) => {
+  try {
+    let { email, password } = req.body;
+
+    console.log("[AUTH] moderator login request received", {
+      hasEmail: Boolean(email),
+      hasPassword: Boolean(password),
+      emailProvided: email ? String(email).trim() : "",
+    });
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and password are required.",
+      });
+    }
+
+    email = email.toLowerCase().trim();
+
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      console.warn("[AUTH] moderator login failed: user not found", {
+        email,
+      });
+
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password.",
+      });
+    }
+
+    console.log("[AUTH] moderator account found", {
+      userId: user._id,
+      role: user.role,
+      accountType: user.accountType,
+    });
+
+    // Only moderators can use this endpoint
+    if (user.role !== "moderator") {
+      console.warn("[AUTH] non-moderator attempted moderator login", {
+        userId: user._id,
+        role: user.role,
+      });
+
+      return res.status(403).json({
+        success: false,
+        message: "This login portal is for moderators only.",
+      });
+    }
+
+    // Verify password
+    const isMatch = await bcrypt.compare(password, user.password);
+
+    if (!isMatch) {
+      console.warn("[AUTH] moderator login failed: password mismatch", {
+        userId: user._id,
+      });
+
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password.",
+      });
+    }
+
+    // Generate moderator token
+    const token = generateToken(user);
+
+    // Mark moderator online
+    user.status = "online";
+    await user.save();
+
+    console.log("[AUTH] moderator login successful", {
+      userId: user._id,
+      email: user.email,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Moderator login successful.",
+      token,
+      user: {
+        _id: user._id,
+        fullName: user.fullName,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        accountType: user.accountType,
+        status: user.status,
+      },
+    });
+  } catch (error) {
+    console.error("[AUTH] Moderator Login Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Moderator login failed. Please try again.",
     });
   }
 };
@@ -514,6 +642,5 @@ exports.logout = async (req, res) => {
     });
   }
 };
-
 
 exports.generateToken = generateToken;

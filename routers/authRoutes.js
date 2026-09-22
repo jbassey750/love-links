@@ -10,6 +10,7 @@ const {
   signup,
   login,
   logout,
+  moderatorLogin,
 } = require("../controllers/authController");
 
 router.post(
@@ -19,6 +20,8 @@ router.post(
 );
 
 router.post("/login", login);
+
+router.post("/moderator-login", moderatorLogin);
 
 // Logout
 // POST /api/auth/logout
