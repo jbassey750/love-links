@@ -1318,7 +1318,7 @@ exports.getRealUsersForAdmin = async (req, res) => {
       role: { $in: ["user", "premium"] },
     })
       .select(
-        "_id fullName username email photo age gender state region status badge accountType role"
+        "_id fullName username email photo age gender state region status badge accountType role verified"
       )
       .sort({ createdAt: -1 });
 
@@ -1380,6 +1380,74 @@ exports.getPendingFakeLikes = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to fetch pending likes.",
+      error: error.message,
+    });
+  }
+};
+
+
+exports.getDashboardStats = async (req, res) => {
+  try {
+    const [
+      totalUsers,
+      managedUsers,
+      premiumUsers,
+      moderators,
+      activeMatches,
+      pendingVerifications,
+    ] = await Promise.all([
+      // All real end-user accounts, including premium users
+      User.countDocuments({
+        accountType: "real",
+        role: { $in: ["user", "premium"] },
+      }),
+
+      // Fake / managed accounts
+      User.countDocuments({
+        accountType: "fake",
+      }),
+
+      // Real premium accounts
+      User.countDocuments({
+        accountType: "real",
+        role: "premium",
+      }),
+
+      // Moderators
+      User.countDocuments({
+        role: "moderator",
+      }),
+
+      // Active matches
+      Match.countDocuments({
+        status: "active",
+      }),
+
+      // Real users that have not been verified
+      User.countDocuments({
+        accountType: "real",
+        role: { $in: ["user", "premium"] },
+        verified: false,
+      }),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      stats: {
+        totalUsers,
+        managedUsers,
+        premiumUsers,
+        moderators,
+        activeMatches,
+        pendingVerifications,
+      },
+    });
+  } catch (error) {
+    console.error("Get dashboard stats error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch dashboard statistics.",
       error: error.message,
     });
   }

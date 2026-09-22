@@ -20,6 +20,7 @@ const {
   getManagedAccounts,
   getRealUsersForAdmin,
   getPendingFakeLikes,
+  getDashboardStats
 } = require("../controllers/adminController");
 
 const {
@@ -150,6 +151,9 @@ router.delete("/packages/:id", protect, authorize("admin"), deletePackage);
 
 // Activate / deactivate package
 router.patch("/packages/:id/status", protect, authorize("admin"), togglePackageStatus);
+
+//dashboard stats
+router.get("/dashboard-stats", protect, authorize("admin"), getDashboardStats);
 
 
 
