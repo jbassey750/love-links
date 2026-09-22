@@ -26,14 +26,36 @@ const app = express();
 
 console.log("CLIENT_URL:", process.env.CLIENT_URL);
 
+const allowedOrigins = ["https://enamora-app.com", "http://localhost:5173"];
+
 const corsOptions = {
-  origin: process.env.CLIENT_URL || "http://localhost:5173",
+  origin: function (origin, callback) {
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error("Not allowed by CORS"));
+  },
+
   credentials: true,
+
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Origin", "X-Requested-With", "Content-Type", "Accept", "Authorization"],
+
+  allowedHeaders: [
+    "Origin",
+    "X-Requested-With",
+    "Content-Type",
+    "Accept",
+    "Authorization",
+  ],
 };
 
 app.use(cors(corsOptions));
+
 app.use((req, res, next) => {
   console.log("[Backend] request", {
     method: req.method,
@@ -63,7 +85,7 @@ app.get("/", (req, res) => {
   });
 });
 
-app.use("/api/auth", authRoutes);  
+app.use("/api/auth", authRoutes);
 app.use("/api/discover", discoverRoutes);
 app.use("/api/matches", matchRoutes);
 app.use("/api/chats", chatRoutes);
@@ -71,7 +93,7 @@ app.use("/api/messages", messageRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/packages", packageRoutes);
 app.use("/api/points", pointPackageRoutes);
-app.use("/api/payments", paymentRoutes); 
+app.use("/api/payments", paymentRoutes);
 app.use("/api/profile", profileRoutes);
 app.use("/api/webhooks", webhookRoutes);
 app.use("/api/users/location", updateLocationRoutes);
