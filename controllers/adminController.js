@@ -491,7 +491,7 @@ exports.approveFakeLike = async (req, res) => {
     // ==============================
     // ADD THE SOCKET CODE HERE
     // ==============================
-    const { getIO } = require("../socket/socketManager");
+    // const { getIO } = require("../socket/socketManager");
 
     const io = getIO();
 
@@ -1270,6 +1270,117 @@ exports.startAdminConversation = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message,
+    });
+  }
+};
+
+
+// =========================================================
+// GET ALL MANAGED / FAKE ACCOUNTS
+// =========================================================
+
+exports.getManagedAccounts = async (req, res) => {
+  try {
+    const accounts = await User.find({
+      accountType: "fake",
+    })
+      .select(
+        "_id fullName username email photo age gender state region status badge accountType role createdAt"
+      )
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      total: accounts.length,
+      accounts,
+    });
+  } catch (error) {
+    console.error("Get managed accounts error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch managed accounts.",
+      error: error.message,
+    });
+  }
+};
+
+
+// =========================================================
+// GET ALL REAL USERS
+// Used by admin when selecting who a managed account should like
+// =========================================================
+
+exports.getRealUsersForAdmin = async (req, res) => {
+  try {
+    const users = await User.find({
+      accountType: "real",
+      role: { $in: ["user", "premium"] },
+    })
+      .select(
+        "_id fullName username email photo age gender state region status badge accountType role"
+      )
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      total: users.length,
+      users,
+    });
+  } catch (error) {
+    console.error("Get real users error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch real users.",
+      error: error.message,
+    });
+  }
+};
+
+
+// =========================================================
+// GET PENDING LIKES FOR MANAGED ACCOUNTS
+// Real user -> managed account
+// =========================================================
+
+exports.getPendingFakeLikes = async (req, res) => {
+  try {
+    const likes = await Like.find({
+      status: "pending",
+    })
+      .populate({
+        path: "fromUser",
+        select:
+          "_id fullName username email photo age gender state region status badge accountType role",
+      })
+      .populate({
+        path: "toUser",
+        select:
+          "_id fullName username email photo age gender state region status badge accountType role",
+      })
+      .sort({ createdAt: -1 });
+
+    // Only keep:
+    // real user -> managed/fake account
+    const pendingLikes = likes.filter(
+      (like) =>
+        like.fromUser?.accountType === "real" &&
+        like.toUser?.accountType === "fake"
+    );
+
+    return res.status(200).json({
+      success: true,
+      total: pendingLikes.length,
+      likes: pendingLikes,
+    });
+  } catch (error) {
+    console.error("Get pending managed account likes error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch pending likes.",
+      error: error.message,
     });
   }
 };

@@ -15,6 +15,11 @@ const {
   getAllActiveMatches,
   getAdminChat,
   startAdminConversation,
+
+   // Managed account workspace
+  getManagedAccounts,
+  getRealUsersForAdmin,
+  getPendingFakeLikes,
 } = require("../controllers/adminController");
 
 const {
@@ -48,6 +53,31 @@ router.post(
   authorize("admin"),
   upload.single("photo"),
   createFakeAccount,
+);
+
+// =========================================================
+// MANAGED ACCOUNT WORKSPACE
+// =========================================================
+
+router.get(
+  "/managed-accounts",
+  protect,
+  authorize("admin"),
+  getManagedAccounts
+);
+
+router.get(
+  "/real-users",
+  protect,
+  authorize("admin"),
+  getRealUsersForAdmin
+);
+
+router.get(
+  "/fake-likes/pending",
+  protect,
+  authorize("admin"),
+  getPendingFakeLikes
 );
 
 router.post(
@@ -120,5 +150,8 @@ router.delete("/packages/:id", protect, authorize("admin"), deletePackage);
 
 // Activate / deactivate package
 router.patch("/packages/:id/status", protect, authorize("admin"), togglePackageStatus);
+
+
+
 
 module.exports = router;

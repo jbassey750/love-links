@@ -453,5 +453,3 @@ exports.getMatch = async (req, res) => {
     });
   }
 };
-
-// fake users

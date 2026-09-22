@@ -70,7 +70,7 @@ const sendOTPEmail = async ({ email, otp, fullName }) => {
                 font-family: Georgia, serif;
                 font-size: 32px;
               ">
-                Enamora ❤️
+                Enamora
               </h1>
 
               <p style="
