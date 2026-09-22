@@ -1327,7 +1327,7 @@ exports.getRealUsersForAdmin = async (req, res) => {
       total: users.length,
       users,
     });
-  } catch (error) {
+  } catch (error) { 
     console.error("Get real users error:", error);
 
     return res.status(500).json({
@@ -1448,6 +1448,184 @@ exports.getDashboardStats = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to fetch dashboard statistics.",
+      error: error.message,
+    });
+  }
+};
+
+// =========================================================
+// GET MODERATOR MONITORING
+// Admin only
+// =========================================================
+exports.getModeratorMonitoring = async (req, res) => {
+  try {
+    const moderators = await User.find({
+      role: "moderator",
+    })
+      .select(
+        "_id fullName username email photo status moderatorAccountStatus createdAt"
+      )
+      .sort({ createdAt: -1 });
+
+    // Start of today
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const monitoring = await Promise.all(
+      moderators.map(async (moderator) => {
+        // ==========================================
+        // Messages sent by this moderator today
+        // ==========================================
+        const messagesToday = await Message.countDocuments({
+          moderator: moderator._id,
+          createdAt: { $gte: startOfToday },
+        });
+
+        // ==========================================
+        // Latest moderator activity
+        // ==========================================
+        const lastMessage = await Message.findOne({
+          moderator: moderator._id,
+        })
+          .sort({ createdAt: -1 })
+          .select("_id chat createdAt messageType");
+
+        // ==========================================
+        // Active chats handled by moderator today
+        //
+        // A chat counts when:
+        // - assignment belongs to moderator
+        // - assignment is active
+        // - chat is active
+        // - chat had activity today
+        // ==========================================
+        const assignments = await FakeAccountAssignment.find({
+          moderator: moderator._id,
+          status: "active",
+        }).select("chat");
+
+        const chatIds = assignments
+          .map((assignment) => assignment.chat)
+          .filter(Boolean);
+
+        let activeChatsToday = 0;
+
+        if (chatIds.length > 0) {
+          activeChatsToday = await Chat.countDocuments({
+            _id: { $in: chatIds },
+            isActive: true,
+            lastMessageAt: { $gte: startOfToday },
+          });
+        }
+
+        return {
+          _id: moderator._id,
+          fullName: moderator.fullName,
+          username: moderator.username,
+          email: moderator.email,
+          photo: moderator.photo,
+          status: moderator.status,
+          moderatorAccountStatus:
+            moderator.moderatorAccountStatus || "active",
+
+          messagesToday,
+          activeChatsToday,
+
+          lastActivity: lastMessage?.createdAt || null,
+
+          createdAt: moderator.createdAt,
+        };
+      })
+    );
+
+    return res.status(200).json({
+      success: true,
+      total: monitoring.length,
+      moderators: monitoring,
+    });
+  } catch (error) {
+    console.error("Get moderator monitoring error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch moderator monitoring.",
+      error: error.message,
+    });
+  }
+};
+
+// =========================================================
+// UPDATE MODERATOR ACCOUNT STATUS
+// Admin only
+//
+// status:
+// active
+// deactivated
+// suspended
+// =========================================================
+exports.updateModeratorStatus = async (req, res) => {
+  try {
+    const { moderatorId } = req.params;
+    const { status } = req.body;
+
+    if (!moderatorId) {
+      return res.status(400).json({
+        success: false,
+        message: "Moderator ID is required.",
+      });
+    }
+
+    if (!["active", "deactivated", "suspended"].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid moderator status. Use active, deactivated, or suspended.",
+      });
+    }
+
+    const moderator = await User.findOne({
+      _id: moderatorId,
+      role: "moderator",
+    });
+
+    if (!moderator) {
+      return res.status(404).json({
+        success: false,
+        message: "Moderator not found.",
+      });
+    }
+
+    moderator.moderatorAccountStatus = status;
+
+    // If the admin deactivates/suspends the moderator,
+    // remove their online presence.
+    if (status !== "active") {
+      moderator.status = "offline";
+    }
+
+    await moderator.save();
+
+    return res.status(200).json({
+      success: true,
+      message:
+        status === "active"
+          ? "Moderator account activated successfully."
+          : `Moderator account ${status} successfully.`,
+      moderator: {
+        _id: moderator._id,
+        fullName: moderator.fullName,
+        username: moderator.username,
+        email: moderator.email,
+        status: moderator.status,
+        moderatorAccountStatus: moderator.moderatorAccountStatus,
+      },
+    });
+  } catch (error) {
+    console.error("Update moderator status error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update moderator status.",
       error: error.message,
     });
   }

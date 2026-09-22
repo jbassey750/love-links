@@ -163,6 +163,12 @@ const UserSchema = new mongoose.Schema(
         default: "inactive",
       },
 
+      moderatorAccountStatus: {
+        type: String,
+        enum: ["active", "deactivated", "suspended"],
+        default: "active",
+      },
+
       startDate: Date,
 
       endDate: Date,

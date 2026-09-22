@@ -20,7 +20,10 @@ const {
   getManagedAccounts,
   getRealUsersForAdmin,
   getPendingFakeLikes,
-  getDashboardStats
+  getDashboardStats,
+
+  getModeratorMonitoring,
+  updateModeratorStatus,
 } = require("../controllers/adminController");
 
 const {
@@ -156,6 +159,18 @@ router.patch("/packages/:id/status", protect, authorize("admin"), togglePackageS
 router.get("/dashboard-stats", protect, authorize("admin"), getDashboardStats);
 
 
+router.get(
+  "/moderator-monitoring",
+  protect,
+  authorize("admin"),
+  getModeratorMonitoring
+);
 
+router.patch(
+  "/moderators/:moderatorId/status",
+  protect,
+  authorize("admin"),
+  updateModeratorStatus
+);
 
 module.exports = router;

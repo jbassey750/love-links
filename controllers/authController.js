@@ -558,6 +558,30 @@ exports.moderatorLogin = async (req, res) => {
       });
     }
 
+    // ==========================================
+    // Check moderator account status
+    // ==========================================
+    // The extra check for a value makes this safe
+    // for moderators created before the new field
+    // was added to the User model.
+    if (
+      user.moderatorAccountStatus &&
+      user.moderatorAccountStatus !== "active"
+    ) {
+      console.warn("[AUTH] moderator account is not active", {
+        userId: user._id,
+        moderatorAccountStatus: user.moderatorAccountStatus,
+      });
+
+      return res.status(403).json({
+        success: false,
+        message:
+          user.moderatorAccountStatus === "suspended"
+            ? "Your moderator account has been suspended."
+            : "Your moderator account has been deactivated.",
+      });
+    }
+
     // Verify password
     const isMatch = await bcrypt.compare(password, user.password);
 
@@ -596,6 +620,8 @@ exports.moderatorLogin = async (req, res) => {
         role: user.role,
         accountType: user.accountType,
         status: user.status,
+        moderatorAccountStatus:
+          user.moderatorAccountStatus || "active",
       },
     });
   } catch (error) {
