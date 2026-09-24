@@ -8,6 +8,11 @@ const createNotification = require("../utils/createNotification");
 const pointCost = require("../config/pointCost");
 
 const FakeAccountAssignment = require("../models/FakeAccountAssignment");
+const {
+  assignModerator,
+  transferAssignment,
+  renewAssignmentIfPossible,
+} = require("../services/fakeAccountAssignmentService");
 
 //... Send Message ../
 exports.sendMessage = async (req, res) => {
@@ -84,27 +89,79 @@ exports.sendMessage = async (req, res) => {
     // ===================================================
     // Fake account routing
     // ===================================================
+
     if (receiver.accountType === "fake") {
-      const assignment = await FakeAccountAssignment.findOne({
-        fakeUser: receiver._id,
-        realUser: senderId,
-        status: "active",
-      }).populate("moderator");
+      try {
+        let assignment = await FakeAccountAssignment.findOne({
+          fakeUser: receiver._id,
+          realUser: senderId,
+          chat: chat._id,
+          status: "active",
+        }).populate("moderator");
 
-      if (assignment) {
-        const io = getIO();
-
-        // Send the conversation to the assigned moderator
-        io.to(assignment.moderator._id.toString()).emit(
-          "fake-account-message",
-          {
-            assignmentId: assignment._id,
+        /**
+         * No assignment exists.
+         * Create one for an online moderator.
+         */
+        if (!assignment) {
+          assignment = await assignModerator({
+            fakeUserId: receiver._id,
+            realUserId: senderId,
             chatId: chat._id,
-            fakeUser: receiver,
-            realUser: req.user,
-            message: newMessage,
-          },
-        );
+          });
+        } else {
+          const now = new Date();
+
+          const isExpired =
+            assignment.expiresAt && now >= new Date(assignment.expiresAt);
+
+          if (isExpired) {
+            /**
+             * Check whether the current moderator can keep the
+             * conversation.
+             *
+             * If they are the only online moderator, this renews
+             * their 5-minute session.
+             */
+            const renewedAssignment = await renewAssignmentIfPossible(
+              assignment._id,
+            );
+
+            if (renewedAssignment) {
+              assignment = renewedAssignment;
+            } else {
+              /**
+               * Another moderator is available.
+               * Transfer the assignment.
+               */
+              assignment = await transferAssignment(assignment._id);
+            }
+          }
+        }
+
+        if (assignment?.moderator?._id) {
+          const io = getIO();
+
+          io.to(assignment.moderator._id.toString()).emit(
+            "fake-account-message",
+            {
+              assignmentId: assignment._id,
+              chatId: chat._id,
+              fakeUser: receiver,
+              realUser: req.user,
+              message: newMessage,
+
+              // IMPORTANT:
+              // Send the actual assignment timer to frontend.
+              assignedAt: assignment.assignedAt,
+              expiresAt: assignment.expiresAt,
+
+              status: assignment.status,
+            },
+          );
+        }
+      } catch (assignmentError) {
+        console.error("Fake account assignment error:", assignmentError);
       }
     }
 

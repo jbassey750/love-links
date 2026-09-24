@@ -1,6 +1,9 @@
 const { Server } = require("socket.io");
 const User = require("../models/User");
 const FakeAccountAssignment = require("../models/FakeAccountAssignment");
+const {
+  processExpiredAssignments,
+} = require("../services/fakeAccountAssignmentService");
 
 const messageSocket = require("./messageSocket");
 const notificationSocket = require("./notificationSocket");
@@ -89,6 +92,27 @@ const initSocket = (server) => {
       credentials: true,
     },
   });
+
+    /**
+   * Central assignment expiration checker.
+   *
+   * The service contains all expiration/transfer logic.
+   * This interval only triggers the check.
+   *
+   * Every 5 seconds is frequent enough to handle the
+   * 5-minute assignment without creating multiple timers
+   * for individual assignments.
+   */
+  const assignmentExpiryInterval = setInterval(async () => {
+    try {
+      await processExpiredAssignments();
+    } catch (error) {
+      console.error(
+        "Assignment expiry processor error:",
+        error,
+      );
+    }
+  }, 5000);
 
   io.on("connection", (socket) => {
     console.log("Socket connected:", socket.id);

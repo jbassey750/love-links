@@ -283,7 +283,10 @@ const getModeratorStats = async (req, res) => {
 
   */
 
-    const allMessages = await Message.find({})
+    const allMessages = await Message.find({
+      moderator: req.user._id,
+      // moderator: { $ne: null },
+    })
       .select("chat sender receiver moderator createdAt messageType")
       .populate("sender", "fullName username age accountType photo")
       .populate("moderator", "fullName username role")
@@ -441,42 +444,6 @@ const getModeratorStats = async (req, res) => {
 
   */
 
-    // const chatsPerDay = [];
-
-    // let chartDays = 1;
-
-    // if (range === "Last 7 Days") {
-      // chartDays = 7;
-    // }
-
-    // if (range === "Last 30 Days") {
-      // chartDays = 30;
-    // }
-
-    // for (let i = chartDays - 1; i >= 0; i--) {
-      // const date = new Date(now);
-
-      // date.setDate(date.getDate() - i);
-
-      // const dayStart = startOfDay(date);
-      // const dayEnd = endOfDay(date);
-
-      // const dayMessages = messagesBetween(dayStart, dayEnd);
-
-      // chatsPerDay.push({
-        // date: dayStart.toISOString(),
-
-        // label:
-          // chartDays === 30
-            // ? `${dayStart.getDate()}/${dayStart.getMonth() + 1}`
-            // : dayStart.toLocaleDateString("en-US", {
-                // weekday: "short",
-              // }),
-
-        // chats: getUniqueChatCount(dayMessages),
-      // });
-    // }
-
     /*
      * ---
      * MESSAGES PER DAY + CHATS PER DAY
@@ -486,11 +453,48 @@ const getModeratorStats = async (req, res) => {
     const messagesPerDay = [];
     const chatsPerDay = [];
 
-    let chartStart = new Date(selectedRange.start);
-    let chartEnd = new Date(selectedRange.end);
+    // Always show the current week: Sunday -> Saturday
+    const chartStart = startOfDay(new Date(now));
+    chartStart.setDate(chartStart.getDate() - chartStart.getDay());
+
+    const chartEnd = endOfDay(new Date(chartStart));
+    chartEnd.setDate(chartEnd.getDate() + 6);
+
+    let currentDay = new Date(chartStart);
+
+    while (currentDay <= chartEnd) {
+      const dayStart = startOfDay(currentDay);
+      const dayEnd = endOfDay(currentDay);
+
+      const dayMessages = messagesBetween(dayStart, dayEnd);
+
+      const uniqueChatsForDay = new Set(
+        dayMessages
+          .filter((message) => message.chat)
+          .map((message) => message.chat.toString()),
+      );
+
+      const label = dayStart.toLocaleDateString("en-US", {
+        weekday: "short",
+      });
+
+      messagesPerDay.push({
+        date: dayStart.toISOString(),
+        label,
+        messages: dayMessages.length,
+      });
+
+      chatsPerDay.push({
+        date: dayStart.toISOString(),
+        label,
+        chats: uniqueChatsForDay.size,
+      });
+
+      currentDay.setDate(currentDay.getDate() + 1);
+    }
 
     // Build one point for every day in the selected range
-    let currentDay = startOfDay(chartStart);
+    // let currentDay = startOfDay(chartStart);
 
     while (currentDay <= chartEnd) {
       const dayStart = startOfDay(currentDay);
