@@ -3,7 +3,7 @@ require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 
 const http = require("http");
 
-const app = require("./app");
+const app = require("./app"); 
 const connectDB = require("../db/mongooes");
 
 const { initSocket } = require("../socket/socketManager");

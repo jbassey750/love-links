@@ -15,7 +15,7 @@ const {
 
 router.post(
   "/signup",
-  upload.single("photo"),
+  upload.single("photo"), 
   signup,
 );
 

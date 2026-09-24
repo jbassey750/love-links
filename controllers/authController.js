@@ -2,6 +2,8 @@ const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
+const cloudinary = require("../config/cloudinary");
+const supabase = require("../config/supabase");
 
 // Import OTP model
 const OTP = require("../models/OTP");
@@ -28,7 +30,6 @@ const generateToken = (user) => {
 /**
  * SIGN UP
  */
-
 exports.signup = async (req, res) => {
   try {
     let {
@@ -160,10 +161,8 @@ exports.signup = async (req, res) => {
 
     if (typeof lookingFor === "string") {
       try {
-        // Handle JSON string: '["male","female"]'
         lookingFor = JSON.parse(lookingFor);
       } catch {
-        // Handle plain string: "male"
         lookingFor = [lookingFor];
       }
     }
@@ -172,7 +171,6 @@ exports.signup = async (req, res) => {
       lookingFor = [];
     }
 
-    // Normalize each lookingFor value
     lookingFor = lookingFor.map((item) => item.toLowerCase().trim());
 
     // ===============================
@@ -269,6 +267,45 @@ exports.signup = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // ===============================
+    // Upload Profile Photo
+    // ===============================
+
+    let photoUrl = "";
+
+    if (req.file) {
+      const fileExtension =
+        req.file.originalname.split(".").pop()?.toLowerCase() || "jpg";
+
+      const fileName = `profile-${Date.now()}-${Math.random()
+        .toString(36)
+        .substring(2, 10)}.${fileExtension}`;
+
+      const filePath = `profiles/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("profile-images")
+        .upload(filePath, req.file.buffer, {
+          contentType: req.file.mimetype,
+          upsert: false,
+        });
+
+      if (uploadError) {
+        console.error("Supabase Upload Error:", uploadError);
+
+        return res.status(500).json({
+          success: false,
+          message: "Unable to upload profile photo.",
+        });
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from("profile-images")
+        .getPublicUrl(filePath);
+
+      photoUrl = publicUrlData.publicUrl;
+    }
+
+    // ===============================
     // Create User
     // ===============================
 
@@ -287,7 +324,7 @@ exports.signup = async (req, res) => {
       bio: bio || "",
       badge: badge || "Love & Friends",
       interests,
-      photo: req.file ? req.file.filename : "",
+      photo: photoUrl,
     });
 
     // ===============================
@@ -620,8 +657,7 @@ exports.moderatorLogin = async (req, res) => {
         role: user.role,
         accountType: user.accountType,
         status: user.status,
-        moderatorAccountStatus:
-          user.moderatorAccountStatus || "active",
+        moderatorAccountStatus: user.moderatorAccountStatus || "active",
       },
     });
   } catch (error) {
