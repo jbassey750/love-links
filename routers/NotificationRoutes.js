@@ -14,7 +14,7 @@ const {
   markAllAsRead,
 
   deleteNotification,
-} = require("../controllers/notificationController"); 
+} = require("../controllers/notificationController");  
 
 router.get("/", protect, getNotifications); 
 

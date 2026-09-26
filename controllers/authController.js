@@ -329,7 +329,7 @@ exports.signup = async (req, res) => {
 
     // ===============================
     // Generate Token
-    // ===============================
+    // =============================== 
 
     const token = generateToken(user);
 

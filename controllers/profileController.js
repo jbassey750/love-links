@@ -88,6 +88,8 @@ exports.updateProfile = async (req, res) => {
       fullName,
       age,
       location,
+      state,
+      region,
       bio,
       badge,
       interests,
@@ -128,14 +130,47 @@ exports.updateProfile = async (req, res) => {
       user.age = parsedAge;
     }
 
-    if (location !== undefined) {
-      if (!location.trim()) {
+    if (state !== undefined) {
+      const normalizedState = typeof state === "string" ? state.trim() : "";
+      if (!normalizedState) {
         return res.status(400).json({
           success: false,
-          message: "Location cannot be empty.",
+          message: "State cannot be empty.",
         });
       }
-      user.location = location.trim();
+      user.state = normalizedState;
+    }
+
+    if (region !== undefined) {
+      const normalizedRegion = typeof region === "string" ? region.trim() : "";
+      if (!normalizedRegion) {
+        return res.status(400).json({
+          success: false,
+          message: "Region cannot be empty.",
+        });
+      }
+      user.region = normalizedRegion;
+    }
+
+    if (location !== undefined) {
+      if (typeof location === "string") {
+        const normalizedLocation = location.trim();
+        if (!normalizedLocation) {
+          return res.status(400).json({
+            success: false,
+            message: "Location cannot be empty.",
+          });
+        }
+        user.location = {
+          ...user.location,
+          city: normalizedLocation,
+        };
+      } else if (location && typeof location === "object") {
+        user.location = {
+          ...(user.location || {}),
+          ...location,
+        };
+      }
     }
 
     if (bio !== undefined) {

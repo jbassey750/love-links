@@ -16,6 +16,7 @@ router.get("/me", protect, getMyProfile);
 // router.get("/:userId", protect, getPublicProfile);
 router.get("/:userId", protect, getUserProfile);
 router.put("/me", protect, upload.single("photo"), updateProfile);
+router.patch("/me", protect, upload.single("photo"), updateProfile);
 router.post("/me/upload-photo", protect, upload.single("photo"), uploadProfilePhoto);
 router.delete("/me/photo", protect, deleteProfilePhoto);
 
