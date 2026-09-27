@@ -33,7 +33,7 @@ exports.processVerifiedPayment = async (transaction) => {
 
     if (payment.status !== "pending") {
       throw new Error(
-        `Cannot process payment with status '${payment.status}'.`
+        `Cannot process payment with status '${payment.status}'.`,
       );
     }
 
@@ -56,9 +56,9 @@ exports.processVerifiedPayment = async (transaction) => {
       throw new Error("Transaction reference mismatch.");
     }
 
-    const pointPackage = await Package.findById(
-      payment.pointPackage
-    ).session(session);
+    const pointPackage = await Package.findById(payment.pointPackage).session(
+      session,
+    );
 
     if (!pointPackage) {
       throw new Error("Point package not found.");
@@ -77,6 +77,12 @@ exports.processVerifiedPayment = async (transaction) => {
     if (!user) {
       throw new Error("User not found.");
     }
+
+    console.log("========== PAYMENT CUSTOMER CHECK ==========");
+    console.log("Flutterwave customer:", transaction.customer);
+    console.log("Flutterwave email:", transaction.customer?.email);
+    console.log("Enamora user email:", user.email);
+    console.log("============================================");
 
     if (
       (transaction.customer?.email || "").toLowerCase() !==
@@ -117,15 +123,13 @@ exports.processVerifiedPayment = async (transaction) => {
           receiver: user._id,
           type: "system",
           title: "Points Added",
-          body: `Your payment was successful. ${
-            payment.pointsPurchased
-          } chat ${
+          body: `Your payment was successful. ${payment.pointsPurchased} chat ${
             payment.pointsPurchased === 1 ? "point has" : "points have"
           } been added to your account. You can now use them to chat with people on Enamora.`,
           isRead: false,
         },
       ],
-      { session }
+      { session },
     );
 
     // -----------------------------------------
@@ -146,10 +150,7 @@ exports.processVerifiedPayment = async (transaction) => {
       });
     } catch (socketError) {
       // Do not fail the payment if Socket.IO has an issue.
-      console.error(
-        "Socket notification failed:",
-        socketError.message
-      );
+      console.error("Socket notification failed:", socketError.message);
     }
 
     return {

@@ -80,7 +80,7 @@ exports.initializeCheckout = async (req, res) => {
     });
     console.log(
       "✅ Step 4: Flutterwave response received:",
-      flutterwaveResponse, 
+      flutterwaveResponse,
     );
 
     if (!flutterwaveResponse?.data?.link) {
@@ -138,6 +138,10 @@ exports.verifyCheckout = async (req, res) => {
     }
 
     const transaction = verification.data;
+
+    console.log("========== FLUTTERWAVE TRANSACTION ==========");
+    console.log(JSON.stringify(transaction, null, 2));
+    console.log("==============================================");
 
     // -----------------------------------------
     // CHECK LOCAL PAYMENT
