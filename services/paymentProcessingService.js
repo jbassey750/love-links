@@ -1,8 +1,10 @@
 const mongoose = require("mongoose");
-
 const User = require("../models/User");
 const Payment = require("../models/Payment");
 const Package = require("../models/Package");
+const Notification = require("../models/Notification");
+
+const { getIO } = require("../socket/socketManager");
 
 exports.processVerifiedPayment = async (transaction) => {
   const session = await mongoose.startSession();
@@ -83,12 +85,18 @@ exports.processVerifiedPayment = async (transaction) => {
       throw new Error("Payment customer mismatch.");
     }
 
-    // Credit points
+    // -----------------------------------------
+    // 1. ADD POINTS TO USER
+    // -----------------------------------------
+
     user.points += payment.pointsPurchased;
 
     await user.save({ session });
 
-    // Update payment
+    // -----------------------------------------
+    // 2. UPDATE PAYMENT
+    // -----------------------------------------
+
     payment.status = "completed";
     payment.transactionId = String(transaction.id);
     payment.flutterwaveTransactionId = String(transaction.id);
@@ -99,12 +107,56 @@ exports.processVerifiedPayment = async (transaction) => {
 
     await payment.save({ session });
 
+    // -----------------------------------------
+    // 3. CREATE NOTIFICATION
+    // -----------------------------------------
+
+    const notification = await Notification.create(
+      [
+        {
+          receiver: user._id,
+          type: "system",
+          title: "Points Added",
+          body: `Your payment was successful. ${
+            payment.pointsPurchased
+          } chat ${
+            payment.pointsPurchased === 1 ? "point has" : "points have"
+          } been added to your account. You can now use them to chat with people on Enamora.`,
+          isRead: false,
+        },
+      ],
+      { session }
+    );
+
+    // -----------------------------------------
+    // 4. COMMIT EVERYTHING
+    // -----------------------------------------
+
     await session.commitTransaction();
+
+    // -----------------------------------------
+    // 5. SEND REAL-TIME NOTIFICATION
+    // -----------------------------------------
+
+    try {
+      const io = getIO();
+
+      io.to(user._id.toString()).emit("notification-created", {
+        notification: notification[0],
+      });
+    } catch (socketError) {
+      // Do not fail the payment if Socket.IO has an issue.
+      console.error(
+        "Socket notification failed:",
+        socketError.message
+      );
+    }
 
     return {
       alreadyProcessed: false,
       payment,
       user,
+      notification: notification[0],
     };
   } catch (error) {
     if (session.inTransaction()) {
@@ -113,6 +165,6 @@ exports.processVerifiedPayment = async (transaction) => {
 
     throw error;
   } finally {
-    session.endSession();
+    await session.endSession();
   }
 };

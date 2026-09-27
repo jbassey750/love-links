@@ -20,7 +20,7 @@ router.post(
 );
 
 /**
- * Verify Flutterwave Payment
+ * Verify Flutterwave Payment 
  * GET /api/payments/verify
  */
 router.get(

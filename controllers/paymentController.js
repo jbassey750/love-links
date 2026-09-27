@@ -80,7 +80,7 @@ exports.initializeCheckout = async (req, res) => {
     });
     console.log(
       "✅ Step 4: Flutterwave response received:",
-      flutterwaveResponse,
+      flutterwaveResponse, 
     );
 
     if (!flutterwaveResponse?.data?.link) {
@@ -112,6 +112,7 @@ exports.initializeCheckout = async (req, res) => {
 /**
  * Verify Flutterwave Payment
  */
+
 exports.verifyCheckout = async (req, res) => {
   try {
     const { transaction_id } = req.query;
@@ -119,36 +120,56 @@ exports.verifyCheckout = async (req, res) => {
     if (!transaction_id) {
       return res.status(400).json({
         success: false,
-
         message: "Transaction ID is required.",
       });
     }
 
+    // Verify the transaction directly with Flutterwave
     const verification = await verifyTransaction(transaction_id);
 
     if (
       verification.status !== "success" ||
-      verification.data.status !== "successful"
+      verification.data?.status !== "successful"
     ) {
       return res.status(400).json({
         success: false,
-
         message: "Payment verification failed.",
       });
     }
 
     const transaction = verification.data;
 
-    const result = await processVerifiedPayment(transaction);
+    // -----------------------------------------
+    // CHECK LOCAL PAYMENT
+    // -----------------------------------------
 
-    // Extra protection:
-    // Only the logged-in owner can complete the request.
-    if (result.payment.user.toString() !== req.user._id.toString()) {
+    const payment = await Payment.findOne({
+      txRef: transaction.tx_ref,
+    });
+
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: "Payment record not found.",
+      });
+    }
+
+    // -----------------------------------------
+    // VERIFY PAYMENT OWNER BEFORE PROCESSING
+    // -----------------------------------------
+
+    if (payment.user.toString() !== req.user._id.toString()) {
       return res.status(403).json({
         success: false,
         message: "Unauthorized payment verification.",
       });
     }
+
+    // -----------------------------------------
+    // PROCESS PAYMENT
+    // -----------------------------------------
+
+    const result = await processVerifiedPayment(transaction);
 
     return res.status(200).json({
       success: true,
@@ -158,6 +179,8 @@ exports.verifyCheckout = async (req, res) => {
       points: result.user.points,
     });
   } catch (error) {
+    console.error("Payment verification error:", error);
+
     return res.status(500).json({
       success: false,
       message: error.message,
