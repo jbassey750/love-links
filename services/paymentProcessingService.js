@@ -78,16 +78,23 @@ exports.processVerifiedPayment = async (transaction) => {
       throw new Error("User not found.");
     }
 
+    const flutterwaveEmail = (transaction.customer?.email || "")
+      .toLowerCase()
+      .trim();
+
+    const userEmail = (user.email || "").toLowerCase().trim();
+
+    const normalizedFlutterwaveEmail = flutterwaveEmail.startsWith("ravesb_")
+      ? flutterwaveEmail.substring(flutterwaveEmail.lastIndexOf("_") + 1)
+      : flutterwaveEmail;
+
     console.log("========== PAYMENT CUSTOMER CHECK ==========");
-    console.log("Flutterwave customer:", transaction.customer);
-    console.log("Flutterwave email:", transaction.customer?.email);
-    console.log("Enamora user email:", user.email);
+    console.log("Original Flutterwave email:", flutterwaveEmail);
+    console.log("Normalized Flutterwave email:", normalizedFlutterwaveEmail);
+    console.log("Enamora user email:", userEmail);
     console.log("============================================");
 
-    if (
-      (transaction.customer?.email || "").toLowerCase() !==
-      (user.email || "").toLowerCase()
-    ) {
+    if (normalizedFlutterwaveEmail !== userEmail) {
       throw new Error("Payment customer mismatch.");
     }
 
