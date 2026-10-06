@@ -26,15 +26,18 @@ const app = express();
 
 console.log("CLIENT_URL:", process.env.CLIENT_URL);
 
-const allowedOrigins = ["https://enamora-app.com", "http://localhost:5173", "https://e-chat.miinify.com"];
+const allowedOrigins = [
+  process.env.CLIENT_URL,
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "https://e-chat.miinify.com",
+].filter(Boolean);
 
 const corsOptions = {
   origin: function (origin, callback) {
-    if (!origin) {
-      return callback(null, true);
-    }
+    console.log("CORS origin:", origin);
 
-    if (allowedOrigins.includes(origin)) {
+    if (!origin || allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
 
