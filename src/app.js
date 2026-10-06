@@ -26,7 +26,7 @@ const app = express();
 
 console.log("CLIENT_URL:", process.env.CLIENT_URL);
 
-const allowedOrigins = ["https://enamora-app.com", "http://localhost:5173"];
+const allowedOrigins = ["https://enamora-app.com", "http://localhost:5173", "https://e-chat.miinify.com"];
 
 const corsOptions = {
   origin: function (origin, callback) {
