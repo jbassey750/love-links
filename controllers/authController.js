@@ -548,12 +548,6 @@ exports.moderatorLogin = async (req, res) => {
   try {
     let { email, password } = req.body;
 
-    console.log("[AUTH] moderator login request received", {
-      hasEmail: Boolean(email),
-      hasPassword: Boolean(password),
-      emailProvided: email ? String(email).trim() : "",
-    });
-
     if (!email || !password) {
       return res.status(400).json({
         success: false,
@@ -566,29 +560,14 @@ exports.moderatorLogin = async (req, res) => {
     const user = await User.findOne({ email });
 
     if (!user) {
-      console.warn("[AUTH] moderator login failed: user not found", {
-        email,
-      });
-
       return res.status(401).json({
         success: false,
         message: "Invalid email or password.",
       });
     }
 
-    console.log("[AUTH] moderator account found", {
-      userId: user._id,
-      role: user.role,
-      accountType: user.accountType,
-    });
-
     // Only moderators can use this endpoint
     if (user.role !== "moderator") {
-      console.warn("[AUTH] non-moderator attempted moderator login", {
-        userId: user._id,
-        role: user.role,
-      });
-
       return res.status(403).json({
         success: false,
         message: "This login portal is for moderators only.",
@@ -605,11 +584,6 @@ exports.moderatorLogin = async (req, res) => {
       user.moderatorAccountStatus &&
       user.moderatorAccountStatus !== "active"
     ) {
-      console.warn("[AUTH] moderator account is not active", {
-        userId: user._id,
-        moderatorAccountStatus: user.moderatorAccountStatus,
-      });
-
       return res.status(403).json({
         success: false,
         message:
@@ -623,10 +597,6 @@ exports.moderatorLogin = async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
-      console.warn("[AUTH] moderator login failed: password mismatch", {
-        userId: user._id,
-      });
-
       return res.status(401).json({
         success: false,
         message: "Invalid email or password.",
@@ -639,11 +609,6 @@ exports.moderatorLogin = async (req, res) => {
     // Mark moderator online
     user.status = "online";
     await user.save();
-
-    console.log("[AUTH] moderator login successful", {
-      userId: user._id,
-      email: user.email,
-    });
 
     return res.status(200).json({
       success: true,
@@ -661,7 +626,7 @@ exports.moderatorLogin = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("[AUTH] Moderator Login Error:", error);
+    console.error("[AUTH] Moderator login failed:", error.message);
 
     return res.status(500).json({
       success: false,
