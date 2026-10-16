@@ -1,15 +1,11 @@
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const crypto = require("crypto");
 const cloudinary = require("../config/cloudinary");
 const supabase = require("../config/supabase");
 
-// Import OTP model
-const OTP = require("../models/OTP");
-
 // Import email service
-const { sendOTPEmail } = require("../services/emailService");
+const { otpDeliveryService } = require("../services/otpDeliveryService");
 
 /**
  * Generate JWT Token
@@ -369,12 +365,6 @@ exports.login = async (req, res) => {
   try {
     let { email, password } = req.body;
 
-    console.log("[AUTH] login request received", {
-      hasEmail: Boolean(email),
-      hasPassword: Boolean(password),
-      emailProvided: email ? String(email).trim() : "",
-    });
-
     if (!email || !password) {
       console.warn("[AUTH] login rejected: missing credentials");
       return res.status(400).json({
@@ -385,11 +375,11 @@ exports.login = async (req, res) => {
 
     email = email.toLowerCase().trim();
 
-    console.log("[AUTH] searching user in MongoDB", { email });
+    console.log("[AUTH] searching for login account");
     const user = await User.findOne({ email });
 
     if (!user) {
-      console.warn("[AUTH] login failed: user not found", { email });
+      console.warn("[AUTH] login failed: account not found");
       return res.status(401).json({
         success: false,
         message: "Invalid email or password.",
@@ -419,7 +409,6 @@ exports.login = async (req, res) => {
     if (user.role === "moderator") {
       console.warn("[AUTH] moderator attempted normal login", {
         userId: user._id,
-        email: user.email,
       });
 
       return res.status(403).json({
@@ -453,81 +442,55 @@ exports.login = async (req, res) => {
       });
     }
 
-    const existingOTP = await OTP.findOne({
-      user: user._id,
-      expiresAt: { $gt: new Date() },
-    });
-
-    if (existingOTP) {
-      console.warn(
-        "[AUTH] login requires OTP but an active OTP already exists",
-        {
-          userId: user._id,
-          otpId: existingOTP._id,
-        },
-      );
-
-      return res.status(429).json({
-        success: false,
-        message:
-          "A verification code has already been sent. Please check your email.",
-        requiresOTP: true,
-        userId: user._id,
-        email: user.email,
-        fullName: user.fullName,
-      });
-    }
-
-    const otpCode = crypto.randomInt(100000, 1000000).toString();
-    const otpHash = await bcrypt.hash(otpCode, 10);
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-
-    console.log("[AUTH] creating OTP record for user", {
-      userId: user._id,
-      expiresAt,
-    });
-
-    await OTP.create({
-      user: user._id,
-      email: user.email,
-      otpHash,
-      expiresAt,
-      attempts: 0,
-    });
-
-    try {
-      console.log("[AUTH] sending OTP email", {
-        userId: user._id,
-        email: user.email,
-      });
-      await sendOTPEmail({
-        email: user.email,
-        fullName: user.fullName,
-        otp: otpCode,
-      });
-    } catch (emailError) {
-      console.error("[AUTH] OTP email send failed", emailError);
-      return res.status(500).json({
-        success: false,
-        message:
-          "Login failed because the verification email could not be sent.",
-        requiresOTP: false,
-      });
-    }
-
-    console.log("[AUTH] OTP required response sent to frontend", {
-      userId: user._id,
-      email: user.email,
-    });
-
-    return res.status(200).json({
-      success: true,
-      message:
-        "Login successful. A verification code has been sent to your email.",
+    const delivery = await otpDeliveryService.request({ user });
+    const otpResponse = {
       requiresOTP: true,
+      emailSent: delivery.emailSent,
       userId: user._id,
       email: user.email,
       fullName: user.fullName,
+      expiresAt: delivery.record?.expiresAt || null,
+      retryAfter: delivery.retryAfter || 0,
+      resendCooldown: delivery.retryAfter || 0,
+    };
+
+    if (delivery.status === "already_sent") {
+      return res.status(200).json({
+        success: true,
+        message: "A verification code is active. Check your email.",
+        ...otpResponse,
+      });
+    }
+
+    if (delivery.status === "cooldown") {
+      return res.status(429).json({
+        success: false,
+        message: `Please wait ${delivery.retryAfter} seconds before requesting another verification code.`,
+        ...otpResponse,
+      });
+    }
+
+    if (delivery.status === "rate_limited") {
+      return res.status(429).json({
+        success: false,
+        message: "Too many verification code requests. Please try again later.",
+        ...otpResponse,
+        retryAfter: null,
+      });
+    }
+
+    if (delivery.status === "delivery_failed") {
+      return res.status(503).json({
+        success: false,
+        message: "Login requires email verification, but the verification email could not be sent. Please retry after the cooldown.",
+        ...otpResponse,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Login requires email verification. A verification code was sent to your email.",
+      ...otpResponse,
     });
   } catch (error) {
     console.error("[AUTH] Login Error:", error);

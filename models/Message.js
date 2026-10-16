@@ -39,6 +39,21 @@ const MessageSchema = new mongoose.Schema(
       default: "",
     },
 
+    imageFileId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+    },
+
+    imageContentType: {
+      type: String,
+      default: "",
+    },
+
+    imageSize: {
+      type: Number,
+      default: null,
+    },
+
     audio: {
       type: String,
       default: "",

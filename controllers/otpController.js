@@ -1,9 +1,8 @@
-const crypto = require("crypto");
-const bcrypt = require("bcryptjs");
-
 const User = require("../models/User");
 const OTP = require("../models/OTP");
-const { sendOTPEmail } = require("../services/emailService");
+const bcrypt = require("bcryptjs");
+const { otpDeliveryService } = require("../services/otpDeliveryService");
+const { safeEmailError } = require("../services/emailService");
 
 const { generateToken } = require("./authController");
 
@@ -19,14 +18,7 @@ const { generateToken } = require("./authController");
 // OTP CONFIGURATION
 // ===============================
 
-const OTP_EXPIRATION_MINUTES = 10;
-const RESEND_COOLDOWN_SECONDS = 60;
-
 const MAX_VERIFICATION_ATTEMPTS = 5;
-
-// Maximum OTP requests allowed within the request window
-const MAX_OTP_REQUESTS = 5;
-const OTP_REQUEST_WINDOW_MINUTES = 60;
 
 const canUseOTP = (user) =>
   user.accountType !== "fake" && ["user", "premium"].includes(user.role);
@@ -34,10 +26,6 @@ const canUseOTP = (user) =>
 // ===============================
 // GENERATE OTP
 // ===============================
-
-const generateOTP = () => {
-  return crypto.randomInt(100000, 1000000).toString();
-};
 
 // ===============================
 // SEND OTP
@@ -73,133 +61,50 @@ exports.sendOTP = async (req, res) => {
       });
     }
 
-    const now = new Date();
-
-    // Find existing OTP
-    let otpRecord = await OTP.findOne({
-      user: user._id,
+    const delivery = await otpDeliveryService.request({
+      user,
+      resend: true,
     });
 
-    // ===============================
-    // RESEND COOLDOWN
-    // ===============================
-
-    if (otpRecord && otpRecord.lastSentAt) {
-      const secondsSinceLastSend =
-        (now.getTime() - otpRecord.lastSentAt.getTime()) / 1000;
-
-      if (secondsSinceLastSend < RESEND_COOLDOWN_SECONDS) {
-        const remainingSeconds = Math.ceil(
-          RESEND_COOLDOWN_SECONDS - secondsSinceLastSend,
-        );
-
-        return res.status(429).json({
-          success: false,
-          message: `Please wait ${remainingSeconds} seconds before requesting another OTP.`,
-          retryAfter: remainingSeconds,
-        });
-      }
-    }
-
-    // ===============================
-    // OTP REQUEST LIMIT
-    // ===============================
-
-    if (otpRecord) {
-      const windowAge =
-        (now.getTime() - otpRecord.requestWindowStart.getTime()) / (1000 * 60);
-
-      if (windowAge >= OTP_REQUEST_WINDOW_MINUTES) {
-        // Reset request window
-        otpRecord.requestCount = 0;
-        otpRecord.requestWindowStart = now;
-      }
-
-      if (otpRecord.requestCount >= MAX_OTP_REQUESTS) {
-        return res.status(429).json({
-          success: false,
-          message: "Too many OTP requests. Please try again later.",
-        });
-      }
-    }
-
-    // ===============================
-    // GENERATE OTP
-    // ===============================
-
-    const otp = generateOTP();
-
-    // Hash OTP before storing
-    const otpHash = await bcrypt.hash(otp, 10);
-
-    const expiresAt = new Date(
-      now.getTime() + OTP_EXPIRATION_MINUTES * 60 * 1000,
-    );
-
-    // ===============================
-    // CREATE / UPDATE OTP RECORD
-    // ===============================
-
-    // ===============================
-    // CREATE / UPDATE OTP RECORD
-    // ===============================
-
-    if (!otpRecord) {
-      otpRecord = new OTP({
-        user: user._id,
-        email: user.email,
-        otpHash,
-        expiresAt,
-        attempts: 0,
-        lastSentAt: now,
-        requestCount: 1,
-        requestWindowStart: now,
+    if (delivery.status === "cooldown") {
+      return res.status(429).json({
+        success: false,
+        message: `Please wait ${delivery.retryAfter} seconds before requesting another OTP.`,
+        requiresOTP: true,
+        emailSent: delivery.emailSent,
+        retryAfter: delivery.retryAfter,
       });
-    } else {
-      // Refresh ALL important fields
-      otpRecord.user = user._id;
-      otpRecord.email = user.email;
-      otpRecord.otpHash = otpHash;
-      otpRecord.expiresAt = expiresAt;
-      otpRecord.attempts = 0;
-      otpRecord.lastSentAt = now;
-
-      // Safely handle old/malformed records
-      if (!otpRecord.requestWindowStart) {
-        otpRecord.requestWindowStart = now;
-      }
-
-      if (typeof otpRecord.requestCount !== "number") {
-        otpRecord.requestCount = 0;
-      }
-
-      otpRecord.requestCount += 1;
     }
 
-    await otpRecord.save();
+    if (delivery.status === "rate_limited") {
+      return res.status(429).json({
+        success: false,
+        message: "Too many OTP requests. Please try again later.",
+        requiresOTP: true,
+        emailSent: false,
+      });
+    }
 
-    // ===============================
-    // SEND EMAIL
-    // ===============================
-
-    await sendOTPEmail({
-      email: user.email,
-      otp,
-      fullName: user.fullName,
-    });
-
-    // ===============================
-    // RESPONSE
-    // ===============================
+    if (delivery.status === "delivery_failed") {
+      return res.status(503).json({
+        success: false,
+        message: "Unable to send verification email. Please retry after the cooldown.",
+        requiresOTP: true,
+        emailSent: false,
+        retryAfter: delivery.retryAfter,
+      });
+    }
 
     return res.status(200).json({
       success: true,
       message: "A verification code has been sent to your email address.",
-      expiresIn: OTP_EXPIRATION_MINUTES * 60,
-      resendCooldown: RESEND_COOLDOWN_SECONDS,
+      requiresOTP: true,
+      emailSent: true,
+      expiresAt: delivery.record.expiresAt,
+      resendCooldown: delivery.retryAfter,
     });
   } catch (error) {
-    console.error("Send OTP error:", error);
+    console.error("Send OTP request failed:", safeEmailError(error));
 
     return res.status(500).json({
       success: false,
@@ -260,6 +165,16 @@ exports.verifyOTP = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: "No active verification code found. Please request a new OTP.",
+      });
+    }
+
+    if (
+      otpRecord.deliveryStatus === "failed" ||
+      otpRecord.deliveryStatus === "pending"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "The verification email was not delivered. Please request a new code.",
       });
     }
 
@@ -343,7 +258,11 @@ exports.verifyOTP = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Verify OTP error:", error);
+    console.error("Verify OTP request failed:", {
+      name: error?.name || "Error",
+      message: error?.message || "OTP verification failed",
+      code: error?.code,
+    });
 
     return res.status(500).json({
       success: false,

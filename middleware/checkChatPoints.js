@@ -1,56 +1,58 @@
 const User = require("../models/User");
 const pointCost = require("../config/pointCost");
 
+const hasActivePremiumSubscription = (user) => {
+  const subscription = user.subscription;
+
+  if (
+    !["premium", "elite"].includes(subscription?.plan) ||
+    subscription?.status !== "active"
+  ) {
+    return false;
+  }
+
+  return !subscription.endDate || new Date(subscription.endDate) > new Date();
+};
+
 module.exports = async (req, res, next) => {
   try {
-    const { messageType } = req.body;
+    const messageType =
+      typeof req.body?.messageType === "string" ? req.body.messageType : "";
 
-    // Default to text if no messageType is provided
-    const type = messageType || "text";
-
-    // Determine the cost of this message
+    const type = messageType || (req.file ? "image" : "text");
     const cost = pointCost[type];
 
-    if (cost === undefined) {
+    if (typeof cost !== "number" || cost < 0) {
       return res.status(400).json({
         success: false,
         message: "Invalid message type.",
       });
     }
 
-    // Get the latest user data
+    if (!req.user?._id) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication is required to send messages.",
+      });
+    }
+
     const user = await User.findById(req.user._id);
 
     if (!user) {
-      console.log("========== CHECK CHAT POINTS FAILED ==========");
-      console.log("User not found for ID:", req.user._id);
-      console.log("=============================================");
       return res.status(404).json({
         success: false,
         message: "User not found.",
       });
     }
 
-    console.log("========== CHECK CHAT POINTS ==========");
-    console.log("User:", user.fullName || user.email || user._id.toString());
-    console.log("Role:", user.role);
-    console.log("Points:", user.points);
-    console.log("Message Type:", type);
-    console.log("Message Cost:", cost);
-    console.log("=======================================");
+    const isFreeToChat =
+      user.role === "admin" ||
+      user.role === "premium" ||
+      hasActivePremiumSubscription(user);
 
-    // ==========================================
-    // Admin and Premium users chat for free
-    // ==========================================
-    if (user.role === "admin" || user.role === "premium") {
-      req.chatPointCost = 0;
-      return next();
-    }
+    const points = Number(user.points);
 
-    // ==========================================
-    // Regular users must have enough points
-    // ==========================================
-    if (user.points < cost) {
+    if (!isFreeToChat && (!Number.isFinite(points) || points < cost)) {
       return res.status(403).json({
         success: false,
         message:
@@ -58,11 +60,18 @@ module.exports = async (req, res, next) => {
       });
     }
 
-    // Make the cost available to the controller
-    req.chatPointCost = cost;
+    req.chatPointCost = isFreeToChat ? 0 : cost;
+    req.chatMessageType = type;
 
     return next();
   } catch (error) {
+    console.error("[Chat points] Verification failed", {
+      stage,
+      messageType: type,
+      userId: req.user?._id?.toString?.(),
+      error: error.message,
+    });
+
     return res.status(500).json({
       success: false,
       message: "Failed to verify chat points.",

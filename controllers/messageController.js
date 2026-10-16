@@ -6,6 +6,13 @@ const User = require("../models/User");
 
 const createNotification = require("../utils/createNotification");
 const pointCost = require("../config/pointCost");
+const {
+  deleteImage,
+  findImage,
+  openImageStream,
+  saveImage,
+} = require("../services/chatImageStorage");
+const mongoose = require("mongoose");
 
 const FakeAccountAssignment = require("../models/FakeAccountAssignment");
 const {
@@ -17,12 +24,24 @@ const {
 //... Send Message ../
 exports.sendMessage = async (req, res) => {
   try {
-    const { chatId, message, messageType } = req.body;
+    const { chatId, message = "", messageType } = req.body;
+    const hasImage = Boolean(req.file);
+    const normalizedMessage = typeof message === "string" ? message.trim() : "";
 
-    if (!chatId || !message) {
+    if (!chatId || (!normalizedMessage && !hasImage)) {
       return res.status(400).json({
         success: false,
-        message: "chatId and message are required.",
+        message: "chatId and a message or image are required.",
+      });
+    }
+
+    if (
+      (hasImage && messageType !== "image") ||
+      (messageType === "image" && !hasImage)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "An image file is required for image messages.",
       });
     }
 
@@ -78,13 +97,51 @@ exports.sendMessage = async (req, res) => {
       });
     }
 
-    const newMessage = await Message.create({
-      chat: chatId,
-      sender: senderId,
-      receiver: receiverId,
-      message,
-      messageType: messageType || "text",
-    });
+    let imageFileId = null;
+
+    if (hasImage) {
+      try {
+        imageFileId = await saveImage(req.file);
+      } catch (uploadError) {
+        console.error("[GridFS Chat Image Upload] Failed:", {
+          message: uploadError.message,
+          name: uploadError.name,
+          code: uploadError.code,
+        });
+        return res.status(503).json({
+          success: false,
+          message: "Unable to store chat image. Please try again.",
+        });
+      }
+    }
+
+    let newMessage;
+    try {
+      newMessage = await Message.create({
+        chat: chatId,
+        sender: senderId,
+        receiver: receiverId,
+        message: normalizedMessage,
+        image: "",
+        imageFileId,
+        imageContentType: hasImage ? req.file.mimetype : "",
+        imageSize: hasImage ? req.file.size : null,
+        messageType: hasImage ? "image" : req.chatMessageType || "text",
+      });
+    } catch (messageError) {
+      if (imageFileId) {
+        try {
+          await deleteImage(imageFileId);
+        } catch (cleanupError) {
+          console.error("[GridFS Chat Image Cleanup] Failed:", {
+            message: cleanupError.message,
+            name: cleanupError.name,
+            code: cleanupError.code,
+          });
+        }
+      }
+      throw messageError;
+    }
 
     // ===================================================
     // Fake account routing
@@ -241,6 +298,114 @@ exports.sendMessage = async (req, res) => {
 
       message: error.message,
     });
+  }
+};
+
+exports.getMessageImage = async (req, res) => {
+  try {
+    const { messageId } = req.params;
+
+    if (!mongoose.isValidObjectId(messageId)) {
+      return res.status(404).json({
+        success: false,
+        message: "Image not found.",
+      });
+    }
+
+    const message = await Message.findById(messageId);
+
+    if (!message || message.deletedForEveryone || !message.imageFileId) {
+      return res.status(404).json({
+        success: false,
+        message: "Image not found.",
+      });
+    }
+
+    const chat = await Chat.findById(message.chat);
+
+    if (!chat) {
+      return res.status(404).json({
+        success: false,
+        message: "Chat not found.",
+      });
+    }
+
+    const userId = req.user._id.toString();
+    const isParticipant = chat.participants.some(
+      (participantId) => participantId.toString() === userId,
+    );
+    let isAssignedModerator = false;
+
+    if (!isParticipant && req.user.role === "moderator") {
+      isAssignedModerator = Boolean(
+        await FakeAccountAssignment.findOne({
+          chat: chat._id,
+          moderator: req.user._id,
+          status: "active",
+        }),
+      );
+    }
+
+    if (!isParticipant && !isAssignedModerator) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied.",
+      });
+    }
+
+    const file = await findImage(message.imageFileId);
+
+    if (!file) {
+      return res.status(404).json({
+        success: false,
+        message: "Image not found.",
+      });
+    }
+
+    const contentType = message.imageContentType || file.metadata?.contentType;
+
+    if (!["image/jpeg", "image/jpg", "image/png", "image/webp"].includes(contentType)) {
+      return res.status(415).json({
+        success: false,
+        message: "Unsupported image type.",
+      });
+    }
+
+    res.set({
+      "Content-Type": contentType,
+      "Content-Length": String(file.length),
+      "Cache-Control": "private, max-age=300",
+      "X-Content-Type-Options": "nosniff",
+    });
+
+    const imageStream = openImageStream(message.imageFileId);
+    imageStream.on("error", (error) => {
+      console.error("[GridFS Chat Image Read] Failed:", {
+        message: error.message,
+        name: error.name,
+        code: error.code,
+      });
+      if (!res.headersSent) {
+        res.status(500).end();
+      } else {
+        res.destroy(error);
+      }
+    });
+    imageStream.pipe(res);
+  } catch (error) {
+    console.error("[GridFS Chat Image Read] Failed:", {
+      message: error.message,
+      name: error.name,
+      code: error.code,
+    });
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        message: "Unable to retrieve chat image.",
+      });
+    } else {
+      res.destroy(error);
+    }
   }
 };
 

@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const Payment = require("../models/Payment");
 const Package = require("../models/Package");
 
@@ -14,10 +15,13 @@ const {
  * Initialize Flutterwave Payment
  */
 exports.initializeCheckout = async (req, res) => {
-  console.log("🔥 initializeCheckout was called", req.body);
   let txRef;
+  let currency;
+  let packageId;
+  let amount;
+
   try {
-    const { packageId } = req.body;
+    ({ packageId } = req.body);
 
     if (!packageId) {
       return res.status(400).json({
@@ -25,9 +29,7 @@ exports.initializeCheckout = async (req, res) => {
         message: "Point package is required.",
       });
     }
-
     const packageData = await Package.findById(packageId);
-    console.log("✅ Step 1: packageData found:", !!packageData);
 
     if (!packageData) {
       return res.status(404).json({
@@ -43,27 +45,42 @@ exports.initializeCheckout = async (req, res) => {
       });
     }
 
-    txRef = `enamora_${Date.now()}_${req.user._id}`;
-    console.log("✅ Step 2: txRef generated:", txRef);
+    currency = packageData.currency || "USD";
+    amount = packageData.price;
+
+    if (currency !== "USD") {
+      return res.status(400).json({
+        success: false,
+        message: "This package cannot be checked out in the configured currency.",
+      });
+    }
+
+    if (!process.env.CLIENT_URL) {
+      throw new Error("CLIENT_URL is missing.");
+    }
+
+    txRef = `enamora_${crypto.randomUUID()}`;
+    const redirectUrl =
+      `${process.env.CLIENT_URL.replace(/\/+$/, "")}/payment/success` +
+      `?tx_ref=${encodeURIComponent(txRef)}`;
 
     const payment = await Payment.create({
       user: req.user._id,
       pointPackage: packageData._id,
-      amount: packageData.price,
-      currency: packageData.currency || "USD",
+      amount,
+      currency,
       pointsPurchased: packageData.points,
       paymentGateway: "flutterwave",
       customerEmail: req.user.email,
       status: "pending",
       txRef,
     });
-    console.log("✅ Step 3: Payment record created:", payment._id);
 
     const flutterwaveResponse = await initializePayment({
       tx_ref: txRef,
-      amount: packageData.price,
-      currency: packageData.currency || "USD",
-      redirect_url: `${process.env.CLIENT_URL}/payment/success?tx_ref=${encodeURIComponent(txRef)}`,
+      amount,
+      currency,
+      redirect_url: redirectUrl,
       customer: {
         email: req.user.email,
         name: req.user.fullName,
@@ -77,13 +94,23 @@ exports.initializeCheckout = async (req, res) => {
         packageId: packageData._id.toString(),
         paymentId: payment._id.toString(),
       },
+    }, {
+      transactionReference: txRef,
+      requestedCurrency: currency,
+      packageIdentifier: packageData._id.toString(),
+      amount,
     });
-    console.log(
-      "✅ Step 4: Flutterwave response received:",
-      flutterwaveResponse,
-    );
 
     if (!flutterwaveResponse?.data?.link) {
+      console.error("[Payment] Flutterwave response contained no checkout link", {
+        transactionReference: txRef,
+        requestedCurrency: currency,
+        packageIdentifier: packageData._id.toString(),
+        amount,
+      });
+
+      await Payment.findOneAndUpdate({ txRef }, { status: "failed" });
+
       return res.status(500).json({
         success: false,
         message: "Flutterwave checkout link was not generated.",
@@ -96,7 +123,13 @@ exports.initializeCheckout = async (req, res) => {
       checkoutUrl: flutterwaveResponse.data.link,
     });
   } catch (error) {
-    console.error("🔥🔥 CAUGHT ERROR in initializeCheckout:", error);
+    console.error("[Payment] Checkout initialization failed", {
+      transactionReference: txRef,
+      requestedCurrency: currency,
+      packageIdentifier: packageId ? String(packageId) : undefined,
+      amount,
+      errorCode: error.code,
+    });
 
     if (txRef) {
       await Payment.findOneAndUpdate({ txRef }, { status: "failed" });
@@ -104,7 +137,7 @@ exports.initializeCheckout = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Unable to initialize payment. Please try again.",
     });
   }
 };
@@ -138,10 +171,6 @@ exports.verifyCheckout = async (req, res) => {
     }
 
     const transaction = verification.data;
-
-    console.log("========== FLUTTERWAVE TRANSACTION ==========");
-    console.log(JSON.stringify(transaction, null, 2));
-    console.log("==============================================");
 
     // -----------------------------------------
     // CHECK LOCAL PAYMENT
@@ -183,11 +212,78 @@ exports.verifyCheckout = async (req, res) => {
       points: result.user.points,
     });
   } catch (error) {
-    console.error("Payment verification error:", error);
+    console.error("Payment verification error:", error.message);
 
     return res.status(500).json({
       success: false,
       message: error.message,
+    });
+  }
+};
+
+/**
+ * Verify a Flutterwave browser return without requiring the customer's
+ * browser session. The transaction is still verified server-to-server and
+ * must match a locally-created payment reference.
+ */
+exports.verifyCheckoutReturn = async (req, res) => {
+  try {
+    const { transaction_id, tx_ref } = req.body;
+
+    if (
+      typeof transaction_id !== "string" ||
+      !/^\d+$/.test(transaction_id) ||
+      typeof tx_ref !== "string" ||
+      !tx_ref.trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Transaction ID and payment reference are required.",
+      });
+    }
+
+    const payment = await Payment.findOne({
+      txRef: tx_ref,
+      paymentGateway: "flutterwave",
+    });
+
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: "Payment record not found.",
+      });
+    }
+
+    const verification = await verifyTransaction(transaction_id);
+    const transaction = verification.data;
+
+    if (
+      verification.status !== "success" ||
+      transaction?.status !== "successful" ||
+      String(transaction.id) !== transaction_id ||
+      transaction.tx_ref !== payment.txRef
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Payment verification failed.",
+      });
+    }
+
+    const result = await processVerifiedPayment(transaction);
+
+    return res.status(200).json({
+      success: true,
+      message: result.alreadyProcessed
+        ? "Payment already verified."
+        : "Payment verified successfully.",
+      pointsAdded: result.payment.pointsPurchased,
+    });
+  } catch (error) {
+    console.error("Payment return verification error:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to verify the payment. Please try again.",
     });
   }
 };

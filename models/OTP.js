@@ -37,6 +37,16 @@ const OTPSchema = new mongoose.Schema(
       default: Date.now,
     },
 
+    deliveryStatus: {
+      type: String,
+      enum: ["pending", "sent", "failed"],
+    },
+
+    emailSentAt: {
+      type: Date,
+      default: null,
+    },
+
     requestCount: {
       type: Number,
       default: 1,

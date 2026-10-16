@@ -1,5 +1,3 @@
-const crypto = require("crypto"); 
-
 const {
   processVerifiedPayment,
 } = require("../services/paymentProcessingService");
@@ -37,7 +35,7 @@ exports.flutterwaveWebhook = async (req, res) => {
       message: "Webhook processed successfully.",
     });
   } catch (error) {
-    console.error("Flutterwave Webhook Error:", error);
+    console.error("Flutterwave Webhook Error:", error.message);
 
     return res.status(500).json({
       success: false,

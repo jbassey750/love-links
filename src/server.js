@@ -18,13 +18,17 @@ http.createServer(app);
 
 initSocket(server);
 
-connectDB(); 
-
-startAssignmentExpiryChecker();
-
 const PORT = process.env.PORT || 5000;
 
-// Start Server
-server.listen(PORT, () => {
+const startServer = async () => {
+  await connectDB();
+  startAssignmentExpiryChecker();
+  server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+  });
+};
+
+startServer().catch((error) => {
+  console.error("Server startup failed:", error.message);
+  process.exitCode = 1;
 });

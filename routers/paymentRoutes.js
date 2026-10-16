@@ -7,6 +7,7 @@ const protect = require("../middleware/auth");
 const {
   initializeCheckout,
   verifyCheckout,
+  verifyCheckoutReturn,
 } = require("../controllers/paymentController"); 
 
 /**
@@ -28,5 +29,14 @@ router.get(
   protect,
   verifyCheckout
 ); 
+
+/**
+ * Verify the hosted-checkout browser return without relying on browser auth.
+ * POST /api/payments/return/verify
+ */
+router.post(
+  "/return/verify",
+  verifyCheckoutReturn
+);
 
 module.exports = router;

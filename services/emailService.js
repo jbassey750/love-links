@@ -1,24 +1,51 @@
 const nodemailer = require("nodemailer"); 
 
+const safeEmailError = (error) => {
+  const safeMessage = String(error?.message || "Email provider request failed")
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted-email]")
+    .replace(/(?:otp|code)\s*[:=]\s*\d{6}/gi, "[redacted-code]");
+  const configuredSecrets = [
+    process.env.SMTP_PASS,
+    process.env.SMTP_USER,
+    process.env.JWT_SECRET,
+  ].filter(Boolean);
+  const message = configuredSecrets.reduce(
+    (result, secret) => result.split(secret).join("[redacted]"),
+    safeMessage,
+  );
+
+  return {
+    name: error?.name || "Error",
+    message,
+    code: typeof error?.code === "string" ? error.code : undefined,
+    responseCode: Number.isInteger(error?.responseCode)
+      ? error.responseCode
+      : undefined,
+    command: typeof error?.command === "string" ? error.command : undefined,
+    syscall: typeof error?.syscall === "string" ? error.syscall : undefined,
+  };
+};
+
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT) || 465,
+  port: Number(process.env.SMTP_PORT) || 587,
   secure: process.env.SMTP_SECURE === "true",
+  requireTLS: process.env.SMTP_SECURE !== "true",
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 15000,
   tls: {
-    rejectUnauthorized:
-      process.env.SMTP_REJECT_UNAUTHORIZED === undefined
-        ? false
-        : process.env.SMTP_REJECT_UNAUTHORIZED === "true",
+    rejectUnauthorized: process.env.SMTP_REJECT_UNAUTHORIZED !== "false",
   },
 });
 
 transporter.verify((error, success) => {
     if (error) {
-        console.error("❌ SMTP CONNECTION FAILED:", error);
+        console.error("SMTP connection verification failed:", safeEmailError(error));
     } else {
         console.log("✅ SMTP SERVER READY");
     }
@@ -204,12 +231,19 @@ const sendOTPEmail = async ({ email, otp, fullName }) => {
       messageId: info.messageId,
     };
   } catch (error) {
-    console.error("Email sending error:", error);
+    console.error("OTP email delivery failed:", safeEmailError(error));
 
-    throw new Error("Unable to send verification email");
+    const deliveryError = new Error("Unable to send verification email");
+    Object.assign(deliveryError, {
+      code: error?.code,
+      responseCode: error?.responseCode,
+      command: error?.command,
+    });
+    throw deliveryError;
   }
 };
 
 module.exports = {
+  safeEmailError,
   sendOTPEmail,
 };
