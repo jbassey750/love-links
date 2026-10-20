@@ -103,7 +103,7 @@ router.post(
   "/moderators",
   protect,
   authorize("admin"),
-  upload.single("photo"),
+  upload.single("photo"), 
   createModerator,
 );
 

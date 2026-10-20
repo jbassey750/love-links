@@ -946,7 +946,7 @@ exports.pokeMatchedUser = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: error.message, 
     });
   }
 };
@@ -981,6 +981,7 @@ exports.getAllActiveMatches = async (req, res) => {
   }
 };
 
+
 exports.getAdminChat = async (req, res) => {
   try {
     const { chatId } = req.params;
@@ -1000,10 +1001,16 @@ exports.getAdminChat = async (req, res) => {
       });
     }
 
-    const chat = await Chat.findById(chatId).populate({
-      path: "participants",
-      select: "fullName username email photo role accountType badge status",
-    });
+    // Fetch the existing chat and its associated Match
+    const chat = await Chat.findById(chatId)
+      .populate({
+        path: "participants",
+        select: "fullName username email photo role accountType badge status",
+      })
+      .populate({
+        path: "match",
+        select: "users status matchedAt chatId",
+      });
 
     if (!chat) {
       return res.status(404).json({
@@ -1021,9 +1028,14 @@ exports.getAdminChat = async (req, res) => {
       })
       .sort({ createdAt: 1 });
 
+    // Return both IDs explicitly for the admin frontend
+    const matchId = chat.match?._id || null;
+
     return res.status(200).json({
       success: true,
       chat,
+      matchId,
+      chatId: chat._id,
       messages,
       totalMessages: messages.length,
     });
@@ -1036,6 +1048,7 @@ exports.getAdminChat = async (req, res) => {
     });
   }
 };
+
 
 exports.startAdminConversation = async (req, res) => {
   try {

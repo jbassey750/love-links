@@ -3,6 +3,8 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const cloudinary = require("../config/cloudinary");
 const supabase = require("../config/supabase");
+const crypto = require("crypto");
+const { sendPasswordResetEmail } = require("../services/emailService");
 
 // Import email service
 const { otpDeliveryService } = require("../services/otpDeliveryService");
@@ -632,5 +634,150 @@ exports.logout = async (req, res) => {
     });
   }
 };
+
+
+
+/**
+ * Request a password-reset email
+ */
+exports.forgotPassword = async (req, res) => {
+  const genericResponse = {
+    success: true,
+    message:
+      "If an account exists with that email, a password-reset link will be sent shortly.",
+  };
+
+  try {
+    const email = String(req.body.email || "").trim().toLowerCase();
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide your email address.",
+      });
+    }
+
+    const user = await User.findOne({ email });
+
+    // Always use the same success response for unknown email addresses.
+    if (!user) {
+      return res.status(200).json(genericResponse);
+    }
+
+    // Generate a secure token, but store only its SHA-256 hash.
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    const hashedToken = crypto
+      .createHash("sha256")
+      .update(rawToken)
+      .digest("hex");
+
+    user.passwordResetToken = hashedToken;
+    user.passwordResetExpires = new Date(Date.now() + 20 * 60 * 1000);
+
+    await user.save();
+
+    const frontendUrl = (
+      process.env.FRONTEND_URL ||
+      process.env.CLIENT_URL ||
+      "https://enamora-app.com"
+    ).replace(/\/+$/, "");
+
+    const resetUrl = `${frontendUrl}/reset-password/${rawToken}`;
+
+    try {
+      await sendPasswordResetEmail({
+        email: user.email,
+        fullName: user.fullName,
+        resetUrl,
+      });
+    } catch (emailError) {
+      // Invalidate the token if the email could not be delivered.
+      user.passwordResetToken = undefined;
+      user.passwordResetExpires = undefined;
+      await user.save();
+
+      console.error("Password-reset email could not be delivered.");
+    }
+
+    return res.status(200).json(genericResponse);
+  } catch (error) {
+    console.error("Forgot-password request failed:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to process your request right now. Please try again.",
+    });
+  }
+};
+
+/**
+ * Reset password using a valid, unused reset token
+ */
+exports.resetPassword = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password, confirmPassword } = req.body;
+
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        message: "The password-reset link is invalid.",
+      });
+    }
+
+    if (typeof password !== "string" || password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Your password must be at least 6 characters long.",
+      });
+    }
+
+    if (confirmPassword !== undefined && password !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Passwords do not match.",
+      });
+    }
+
+    const hashedToken = crypto
+      .createHash("sha256")
+      .update(token)
+      .digest("hex");
+
+    const user = await User.findOne({
+      passwordResetToken: hashedToken,
+      passwordResetExpires: { $gt: new Date() },
+    }).select("+passwordResetToken +passwordResetExpires");
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: "This password-reset link is invalid or has expired. Please request a new one.",
+      });
+    }
+
+    user.password = await bcrypt.hash(password, 10);
+
+    // Make the reset link single-use.
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
+
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Your password has been reset successfully. You can now log in with your new password.",
+    });
+  } catch (error) {
+    console.error("Password reset failed:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to reset your password right now. Please try again.",
+    });
+  }
+};
+
+
 
 exports.generateToken = generateToken;

@@ -11,7 +11,9 @@ const {
   login,
   logout,
   moderatorLogin,
-} = require("../controllers/authController");
+   forgotPassword,
+  resetPassword,
+} = require("../controllers/authController"); 
 
 router.post(
   "/signup",
@@ -26,5 +28,11 @@ router.post("/moderator-login", moderatorLogin);
 // Logout
 // POST /api/auth/logout
 router.post("/logout", protect, logout);
+
+
+// Password reset
+router.post("/forgot-password", forgotPassword);
+
+router.post("/reset-password/:token", resetPassword);
 
 module.exports = router;

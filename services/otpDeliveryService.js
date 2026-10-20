@@ -6,7 +6,7 @@ const { sendOTPEmail } = require("./emailService");
 const OTP_EXPIRATION_MINUTES = 10;
 const RESEND_COOLDOWN_SECONDS = 60;
 const MAX_OTP_REQUESTS = 5;
-const OTP_REQUEST_WINDOW_MINUTES = 60;
+const OTP_REQUEST_WINDOW_MINUTES = 60; 
 
 const createOtpDeliveryService = ({
   otpModel = OTP,
