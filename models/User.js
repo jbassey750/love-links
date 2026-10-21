@@ -59,7 +59,7 @@ const UserSchema = new mongoose.Schema(
     },
 
     lookingFor: {
-      type: [String],
+      type: [String], 
       enum: [
         "female",
         "male",
