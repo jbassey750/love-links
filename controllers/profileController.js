@@ -19,7 +19,7 @@ const cleanUser = (user) => {
   return cleaned;
 };
 
-exports.getMyProfile = async (req, res) => {
+exports.getMyProfile = async (req, res) => { 
   try {
     const user = await User.findById(req.user._id).select("-password");
     if (!user) {
