@@ -4,6 +4,7 @@ const User = require("../models/User");
 const Like = require("../models/Like");
 const Match = require("../models/Match");
 const Chat = require("../models/Chat");
+const Message = require("../models/Message");
 const createNotification = require("../utils/createNotification");
 
 const { assignModerator } = require("../services/fakeAccountAssignmentService");
@@ -286,7 +287,7 @@ exports.getMatches = async (req, res) => {
         path: "chatId",
         populate: {
           path: "lastMessage",
-          select: "message sender createdAt",
+          select: "message messageType sender createdAt",
         },
       });
 
@@ -301,6 +302,28 @@ exports.getMatches = async (req, res) => {
       );
     });
 
+    const chatIds = matches
+      .map((match) => match.chatId?._id)
+      .filter(Boolean);
+    const unreadMessages = await Message.aggregate([
+      {
+        $match: {
+          chat: { $in: chatIds },
+          receiver: userId,
+          seen: false,
+        },
+      },
+      {
+        $group: {
+          _id: "$chat",
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+    const unreadCountsByChat = new Map(
+      unreadMessages.map((entry) => [entry._id.toString(), entry.count]),
+    );
+
     // ============================
     // ADD THE CODE HERE
     // ============================
@@ -313,9 +336,16 @@ exports.getMatches = async (req, res) => {
         _id: match._id,
         chatId: match.chatId?._id,
         user: otherUser,
-        lastMessage: match.chatId?.lastMessage?.message || "No messages yet",
+        lastMessage:
+          match.chatId?.lastMessage?.message ||
+          {
+            image: "Photo",
+            audio: "Audio message",
+            video: "Video",
+          }[match.chatId?.lastMessage?.messageType] ||
+          "No messages yet",
         lastMessageAt: match.chatId?.lastMessage?.createdAt || null,
-        unreadCount: match.unreadCount || 0,
+        unreadCount: unreadCountsByChat.get(match.chatId?._id.toString()) || 0,
       };
     });
 

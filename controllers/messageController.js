@@ -267,6 +267,7 @@ exports.sendMessage = async (req, res) => {
 
     const io = getIO();
     io.to(chatId.toString()).emit("new-message", newMessage);
+    io.to(receiverId.toString()).emit("new-message", newMessage);
 
     // Notification should not block success response
     try {
@@ -279,6 +280,9 @@ exports.sendMessage = async (req, res) => {
         data: {
           chatId: chat._id,
           messageId: newMessage._id,
+          message: newMessage.message,
+          messageType: newMessage.messageType,
+          senderName: req.user.fullName,
         },
       });
     } catch (notificationError) {

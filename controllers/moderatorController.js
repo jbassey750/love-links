@@ -148,6 +148,7 @@ exports.replyAsFakeUser = async (req, res) => {
     const io = getIO();
 
     io.to(assignment.chat._id.toString()).emit("new-message", populatedMessage);
+    io.to(assignment.realUser._id.toString()).emit("new-message", populatedMessage);
 
     // ==========================================
     // Create notification for real/premium user
@@ -163,6 +164,9 @@ exports.replyAsFakeUser = async (req, res) => {
         data: {
           chatId: assignment.chat._id,
           messageId: newMessage._id,
+          message: newMessage.message,
+          messageType: newMessage.messageType,
+          senderName: assignment.fakeUser.fullName,
         },
       });
 

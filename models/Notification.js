@@ -29,6 +29,17 @@ const NotificationSchema = new mongoose.Schema(
         ref: "User",
       },
 
+      messageId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Message",
+      },
+
+      message: String,
+
+      messageType: String,
+
+      senderName: String,
+
       // Date Planner notification
       datePlanId: {
         type: mongoose.Schema.Types.ObjectId,

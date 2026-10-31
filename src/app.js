@@ -26,6 +26,7 @@ const app = express();
 
 console.log("CLIENT_URL:", process.env.CLIENT_URL);
 
+
 const allowedOrigins = [
   process.env.CLIENT_URL,
   "http://localhost:5173",
@@ -35,19 +36,14 @@ const allowedOrigins = [
 
 const corsOptions = {
   origin: function (origin, callback) {
-    console.log("CORS origin:", origin);
-
     if (!origin || allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
 
     return callback(new Error("Not allowed by CORS"));
   },
-
   credentials: true,
-
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-
   allowedHeaders: [
     "Origin",
     "X-Requested-With",
@@ -57,7 +53,52 @@ const corsOptions = {
   ],
 };
 
+// Handle browser preflight requests explicitly.
+app.options(/.*/, (req, res) => {
+  const origin = req.headers.origin;
+
+  if (origin && !allowedOrigins.includes(origin)) {
+    return res.status(403).end();
+  }
+
+  if (origin) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  }
+
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+  );
+
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    req.headers["access-control-request-headers"] ||
+      "Origin, X-Requested-With, Content-Type, Accept, Authorization"
+  );
+
+  return res.status(204).end();
+});
+
 app.use(cors(corsOptions));
+
+
+app.use((req, res, next) => {
+  if (
+    req.method === "OPTIONS" &&
+    req.originalUrl.includes("/notifications/read-all")
+  ) {
+    console.log("READ-ALL PREFLIGHT:", {
+      origin: req.headers.origin,
+      requestedMethod: req.headers["access-control-request-method"],
+      requestedHeaders: req.headers["access-control-request-headers"],
+    });
+  }
+
+  next();
+});
+
 
 app.use((req, res, next) => {
   console.log("[Backend] request", {
