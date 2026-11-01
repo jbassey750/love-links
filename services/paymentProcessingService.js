@@ -3,7 +3,7 @@ const User = require("../models/User");
 const Payment = require("../models/Payment");
 const Package = require("../models/Package");
 const Notification = require("../models/Notification");
-const { getIO } = require("../socket/socketManager");
+const { publishToUser } = require("./realtimeEventService");
 
 /**
  * Map subscription package names to the subscription plans
@@ -321,15 +321,13 @@ exports.processVerifiedPayment = async (transaction) => {
     // Send the socket notification only after the transaction succeeds.
     if (!result.alreadyProcessed && result.notification) {
       try {
-        getIO()
-          .to(result.user._id.toString())
-          .emit("notification-created", {
-            notification: result.notification,
-          });
-      } catch (socketError) {
+        await publishToUser(result.user._id, "notification-created", {
+          notification: result.notification,
+        });
+      } catch (realtimeError) {
         console.error(
-          "[Payment] Failed to emit notification:",
-          socketError.message
+          "[Payment] Failed to publish notification:",
+          realtimeError.message
         );
       }
     }

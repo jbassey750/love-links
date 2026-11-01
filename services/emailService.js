@@ -56,15 +56,23 @@ const getEmailFailureStage = (error) => {
 const logEmailFailure = (operation, error) => {
   console.error(
     `${operation} failed (${getEmailFailureStage(error)})`,
-    safeEmailError(error),
+    {
+      ...safeEmailError(error),
+      host: process.env.SMTP_HOST || "not configured",
+      port: Number(process.env.SMTP_PORT) || undefined,
+    },
   );
 };
 
-const smtpSecure = process.env.SMTP_SECURE === "true";
+const smtpPort = Number(process.env.SMTP_PORT || 465);
+const smtpSecure =
+  process.env.SMTP_SECURE === undefined
+    ? smtpPort === 465
+    : process.env.SMTP_SECURE === "true";
 
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT),
+  port: smtpPort,
   secure: smtpSecure,
   requireTLS: !smtpSecure,
   auth: {
@@ -242,6 +250,7 @@ const sendPasswordResetEmail = async ({ email, resetUrl, fullName }) => {
 };
 
 module.exports = {
+  getEmailFailureStage,
   safeEmailError,
   sendOTPEmail,
   sendPasswordResetEmail,

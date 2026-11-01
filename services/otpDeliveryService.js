@@ -57,6 +57,17 @@ const createOtpDeliveryService = ({
     const expiresAt = new Date(
       requestedAt.getTime() + OTP_EXPIRATION_MINUTES * 60 * 1000,
     );
+    const previousDeliveryState = record
+      ? {
+          email: record.email,
+          otpHash: record.otpHash,
+          expiresAt: record.expiresAt,
+          attempts: record.attempts,
+          lastSentAt: record.lastSentAt,
+          deliveryStatus: record.deliveryStatus,
+          emailSentAt: record.emailSentAt,
+        }
+      : null;
 
     if (!record) {
       record = new otpModel({
@@ -65,7 +76,7 @@ const createOtpDeliveryService = ({
         otpHash,
         expiresAt,
         attempts: 0,
-        lastSentAt: requestedAt,
+        lastSentAt: null,
         requestCount: 1,
         requestWindowStart: requestedAt,
         deliveryStatus: "pending",
@@ -76,7 +87,6 @@ const createOtpDeliveryService = ({
       record.otpHash = otpHash;
       record.expiresAt = expiresAt;
       record.attempts = 0;
-      record.lastSentAt = requestedAt;
       record.requestCount = (record.requestCount || 0) + 1;
       record.requestWindowStart = record.requestWindowStart || requestedAt;
       record.deliveryStatus = "pending";
@@ -92,19 +102,26 @@ const createOtpDeliveryService = ({
         otp: code,
       });
     } catch (error) {
-      record.deliveryStatus = "failed";
+      if (previousDeliveryState) {
+        Object.assign(record, previousDeliveryState);
+      } else {
+        record.lastSentAt = null;
+        record.deliveryStatus = "failed";
+        record.emailSentAt = null;
+      }
       await record.save();
       return {
         status: "delivery_failed",
         record,
         emailSent: false,
-        retryAfter: RESEND_COOLDOWN_SECONDS,
+        retryAfter: getRetryAfter(record.lastSentAt, now()),
         error,
       };
     }
 
     record.deliveryStatus = "sent";
     record.emailSentAt = now();
+    record.lastSentAt = record.emailSentAt;
     await record.save();
 
     return {

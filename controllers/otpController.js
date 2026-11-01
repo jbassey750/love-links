@@ -88,7 +88,7 @@ exports.sendOTP = async (req, res) => {
     if (delivery.status === "delivery_failed") {
       return res.status(503).json({
         success: false,
-        message: "Unable to send verification email. Please retry after the cooldown.",
+        message: "Email delivery is temporarily unavailable. No verification code was sent; please try again shortly.",
         requiresOTP: true,
         emailSent: false,
         retryAfter: delivery.retryAfter,

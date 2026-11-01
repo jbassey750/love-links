@@ -4,7 +4,7 @@ const User = require("../models/User");
 const Payment = require("../models/Payment");
 const Package = require("../models/Package");
 const Notification = require("../models/Notification");
-const { getIO } = require("../socket/socketManager");
+const { publishToUser } = require("./realtimeEventService");
 
 exports.processVerifiedPayment = async (transaction) => {
   const txRef = transaction.tx_ref;
@@ -156,15 +156,13 @@ exports.processVerifiedPayment = async (transaction) => {
     // Emit only after the database transaction has committed.
     if (!result.alreadyProcessed && result.notification) {
       try {
-        getIO()
-          .to(result.user._id.toString())
-          .emit("notification-created", {
-            notification: result.notification,
-          });
-      } catch (socketError) {
+        await publishToUser(result.user._id, "notification-created", {
+          notification: result.notification,
+        });
+      } catch (realtimeError) {
         console.error(
-          "Socket notification failed:",
-          socketError.message
+          "Realtime notification failed:",
+          realtimeError.message
         );
       }
     }

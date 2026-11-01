@@ -7,7 +7,7 @@ const Message = require("../models/Message");
 const FakeAccountAssignment = require("../models/FakeAccountAssignment");
 
 const createNotification = require("../utils/createNotification");
-const { getIO } = require("../socket/socketManager");
+const { publishToUser } = require("../services/realtimeEventService");
 const { assignModerator } = require("../services/fakeAccountAssignmentService");
 
 
@@ -495,9 +495,7 @@ exports.approveFakeLike = async (req, res) => {
     // ==============================
     // const { getIO } = require("../socket/socketManager");
 
-    const io = getIO();
-
-    io.to(realUser._id.toString()).emit("new-match", {
+    await publishToUser(realUser._id, "new-match", {
       matchId: match._id,
       chatId: chat._id,
       user: fakeUser,
@@ -691,18 +689,6 @@ exports.likeUserWithFakeAccount = async (req, res) => {
         },
       });
 
-      const io = getIO();
-
-      io.to(realUser._id.toString()).emit("notification", {
-        type: "like",
-        title: "New Like ❤️",
-        message: `${fakeUser.fullName} liked your profile.`,
-        data: {
-          likeId: like._id,
-          userId: fakeUser._id,
-        },
-      });
-
       return res.status(201).json({
         success: true,
         status: "pending",
@@ -791,15 +777,13 @@ exports.likeUserWithFakeAccount = async (req, res) => {
     // Match socket events
     // ==========================================
 
-    const io = getIO();
-
-    io.to(fakeUser._id.toString()).emit("new-match", {
+    await publishToUser(fakeUser._id, "new-match", {
       matchId: match._id,
       chatId: chat._id,
       user: realUser,
     });
 
-    io.to(realUser._id.toString()).emit("new-match", {
+    await publishToUser(realUser._id, "new-match", {
       matchId: match._id,
       chatId: chat._id,
       user: fakeUser,
@@ -901,8 +885,6 @@ exports.pokeMatchedUser = async (req, res) => {
       });
     }
 
-    const io = getIO();
-
     const notifications = [];
 
     for (const user of recipients) {
@@ -921,17 +903,6 @@ exports.pokeMatchedUser = async (req, res) => {
 
       notifications.push(notification);
 
-      io.to(user._id.toString()).emit("notification", {
-        _id: notification._id,
-        type: "match-reminder",
-        title: "Your match is waiting ❤️",
-        message: "You have a match waiting for you. Start a conversation now!",
-        data: {
-          matchId: match._id,
-          chatId: match.chatId,
-          type: "match-reminder",
-        },
-      });
     }
 
     return res.status(200).json({
@@ -1222,22 +1193,16 @@ exports.startAdminConversation = async (req, res) => {
     // Send real-time Socket.IO notification
     // =========================================================
 
-    const io = getIO();
+    // =========================================================
+    // Update chat
+    // =========================================================
 
-    io.to(recipient._id.toString()).emit("notification", {
-      type: "message",
-      title: "Message from LoveLink",
-      message: message.trim(),
-      data: {
-        chatId: chat._id,
-        matchId: match._id,
-        messageId: newMessage._id,
-        senderType: "admin",
-      },
-    });
+    chat.lastMessage = newMessage._id;
+    chat.lastMessageAt = newMessage.createdAt;
 
-    // Send the actual message to the user's chat
-    io.to(recipient._id.toString()).emit("new-message", {
+    await chat.save();
+
+    await publishToUser(recipient._id, "new-message", {
       ...newMessage.toObject(),
       chat: chat._id,
       senderType: "fake",
@@ -1249,15 +1214,6 @@ exports.startAdminConversation = async (req, res) => {
         accountType: "fake",
       },
     });
-
-    // =========================================================
-    // Update chat
-    // =========================================================
-
-    chat.lastMessage = newMessage._id;
-    chat.lastMessageAt = newMessage.createdAt;
-
-    await chat.save();
 
     // =========================================================
     // Response

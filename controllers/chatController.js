@@ -1,6 +1,6 @@
-const { getIO } = require("../socket/socketManager");
 const Chat = require("../models/Chat");
 const Message = require("../models/Message");
+const { publishToUser } = require("../services/realtimeEventService");
  
 //... Get All Chats For One User ../
 
@@ -175,14 +175,14 @@ exports.deactivateChat = async (req, res) => {
     chat.isActive = false;
     await chat.save();
 
-    const io = getIO();
-
-    chat.participants.forEach((userId) => {
-      io.to(userId.toString()).emit("chat-deactivated", {
+    await Promise.all(
+      chat.participants.map((userId) =>
+        publishToUser(userId, "chat-deactivated", {
         chatId: chat._id,
         isActive: false,
-      });
-    });
+        }),
+      ),
+    );
 
     res.status(200).json({
       success: true,

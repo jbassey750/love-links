@@ -1,4 +1,4 @@
-const { getIO } = require("../socket/socketManager");
+const { publishToUser } = require("../services/realtimeEventService");
 const Notification = require("../models/Notification");
 
 /**
@@ -55,9 +55,7 @@ exports.markAsRead = async (req, res) => {
 
     await notification.save();
 
-    const io = getIO();
-
-    io.to(req.user._id.toString()).emit("notification-read", {
+    await publishToUser(req.user._id, "notification-read", {
       notificationId: notification._id,
     });
 
@@ -94,9 +92,9 @@ exports.markAllAsRead = async (req, res) => {
       },
     );
 
-    const io = getIO();
-
-    io.to(req.user._id.toString()).emit("all-notifications-read");
+    await publishToUser(req.user._id, "all-notifications-read", {
+      updated: result.modifiedCount,
+    });
 
     res.status(200).json({
       success: true,
@@ -133,8 +131,7 @@ exports.deleteNotification = async (req, res) => {
       });
     }
 
-    const io = getIO();
-    io.to(req.user._id.toString()).emit("notification-deleted", {
+    await publishToUser(req.user._id, "notification-deleted", {
       notificationId,
     });
 

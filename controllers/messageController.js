@@ -1,5 +1,3 @@
-const { getIO } = require("../socket/socketManager");
-
 const Chat = require("../models/Chat");
 const Message = require("../models/Message");
 const User = require("../models/User");
@@ -13,6 +11,7 @@ const {
   saveImage,
 } = require("../services/chatImageStorage");
 const mongoose = require("mongoose");
+const { publishToUser } = require("../services/realtimeEventService");
 
 const FakeAccountAssignment = require("../models/FakeAccountAssignment");
 const {
@@ -197,9 +196,8 @@ exports.sendMessage = async (req, res) => {
         }
 
         if (assignment?.moderator?._id) {
-          const io = getIO();
-
-          io.to(assignment.moderator._id.toString()).emit(
+          await publishToUser(
+            assignment.moderator._id,
             "fake-account-message",
             {
               assignmentId: assignment._id,
@@ -265,9 +263,7 @@ exports.sendMessage = async (req, res) => {
       chat.lastMessage.toString(),
     );
 
-    const io = getIO();
-    io.to(chatId.toString()).emit("new-message", newMessage);
-    io.to(receiverId.toString()).emit("new-message", newMessage);
+    await publishToUser(receiverId, "new-message", newMessage.toObject());
 
     // Notification should not block success response
     try {
@@ -544,12 +540,15 @@ exports.markAsSeen = async (req, res) => {
 
     await message.save();
 
-    const io = getIO();
-
-    io.to(message.chat.toString()).emit("message-seen", {
-      messageId: message._id,
-      seenBy: req.user._id,
-    });
+    await Promise.all(
+      chat.participants.map((participantId) =>
+        publishToUser(participantId, "message-seen", {
+          messageId: message._id,
+          seenBy: req.user._id,
+          chatId: chat._id,
+        }),
+      ),
+    );
 
     res.status(200).json({
       success: true,
@@ -592,9 +591,14 @@ exports.editMessage = async (req, res) => {
 
     await msg.save();
 
-    const io = getIO();
-
-    io.to(msg.chat.toString()).emit("message-edited", msg);
+    const chat = await Chat.findById(msg.chat).select("participants");
+    if (chat) {
+      await Promise.all(
+        chat.participants.map((participantId) =>
+          publishToUser(participantId, "message-edited", msg.toObject()),
+        ),
+      );
+    }
 
     res.status(200).json({
       success: true,
@@ -637,11 +641,17 @@ exports.deleteMessage = async (req, res) => {
 
     await message.save();
 
-    const io = getIO();
-
-    io.to(message.chat.toString()).emit("message-deleted", {
-      messageId: message._id,
-    });
+    const chat = await Chat.findById(message.chat).select("participants");
+    if (chat) {
+      await Promise.all(
+        chat.participants.map((participantId) =>
+          publishToUser(participantId, "message-deleted", {
+            messageId: message._id,
+            chatId: chat._id,
+          }),
+        ),
+      );
+    }
 
     res.status(200).json({
       success: true,

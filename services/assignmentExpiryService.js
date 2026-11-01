@@ -1,5 +1,12 @@
 const FakeAccountAssignment = require("../models/FakeAccountAssignment");
-const { getOnlineModerators, getIO } = require("../socket/socketManager");
+const User = require("../models/User");
+const { publishToUser } = require("./realtimeEventService");
+
+const getOnlineModerators = () =>
+  User.find({
+    role: "moderator",
+    status: "online",
+  }).select("_id fullName username photo status role accountType");
 
 /**
  * Check for expired moderator assignments
@@ -23,12 +30,14 @@ const checkExpiredAssignments = async () => {
 
     for (const assignment of expiredAssignments) {
       try {
+        const currentModId = assignment.moderator?.toString() || null;
         const moderators = await getOnlineModerators();
 
         // Find moderators other than the current moderator
         const otherModerators = moderators.filter(
           (moderator) =>
-            moderator._id.toString() !== assignment.moderator.toString(),
+            moderator?._id &&
+            (!currentModId || moderator._id.toString() !== currentModId),
         );
 
         let selectedModerator = null;
@@ -39,15 +48,15 @@ const checkExpiredAssignments = async () => {
         if (otherModerators.length > 0) {
           selectedModerator =
             otherModerators[Math.floor(Math.random() * otherModerators.length)];
-        } else {
+        } else if (currentModId) {
           // ---------------------------------------------------
           // CASE 2: No other moderator is online
           // Try to give it back to the current moderator
           // ---------------------------------------------------
-
           const currentModerator = moderators.find(
             (moderator) =>
-              moderator._id.toString() === assignment.moderator.toString(),
+              moderator?._id &&
+              moderator._id.toString() === currentModId,
           );
 
           if (currentModerator) {
@@ -74,7 +83,6 @@ const checkExpiredAssignments = async () => {
         }
 
         const previousModeratorId = assignment.moderator;
-
         const assignedAt = new Date();
 
         // Give the newly assigned moderator another 5 minutes
@@ -91,14 +99,11 @@ const checkExpiredAssignments = async () => {
 
         console.log("🔄 ASSIGNMENT REASSIGNED");
         console.log("Assignment:", assignment._id.toString());
-        console.log("Previous moderator:", previousModeratorId.toString());
+        console.log("Previous moderator:", previousModeratorId ? previousModeratorId.toString() : "none");
         console.log("New moderator:", selectedModerator._id.toString());
         console.log("New expiry:", expiresAt);
 
-        const io = getIO();
-
-        const previousModeratorIdString = previousModeratorId.toString();
-
+        const previousModeratorIdString = previousModeratorId ? previousModeratorId.toString() : null;
         const selectedModeratorIdString = selectedModerator._id.toString();
 
         // =====================================================
@@ -106,29 +111,34 @@ const checkExpiredAssignments = async () => {
         // =====================================================
         if (previousModeratorIdString !== selectedModeratorIdString) {
           // Tell previous moderator that their assignment expired
-          io.to(previousModeratorIdString).emit("assignment-expired", {
-            assignmentId: assignment._id,
-            chatId: assignment.chat,
-            message:
-              "Your chat response time has expired and this conversation has been reassigned.",
-          });
+          if (previousModeratorIdString) {
+            await publishToUser(previousModeratorIdString, "assignment-expired", {
+              assignmentId: assignment._id,
+              chatId: assignment.chat,
+              message:
+                "Your chat response time has expired and this conversation has been reassigned.",
+            }).catch((err) => {
+              console.warn("[Expiry] Failed to notify expired moderator:", err.message);
+            });
+          }
 
           // Tell new moderator about the assignment
-          io.to(selectedModeratorIdString).emit("assignment-transferred", {
+          await publishToUser(selectedModeratorIdString, "assignment-transferred", {
             assignmentId: assignment._id,
             chatId: assignment.chat,
             fakeUser: assignment.fakeUser,
             realUser: assignment.realUser,
             assignedAt,
             expiresAt,
+          }).catch((err) => {
+            console.warn("[Expiry] Failed to notify new moderator:", err.message);
           });
         }
-
         // =====================================================
         // SAME MODERATOR RECEIVED THE CHAT AGAIN
         // =====================================================
         else {
-          io.to(selectedModeratorIdString).emit("assignment-transferred", {
+          await publishToUser(selectedModeratorIdString, "assignment-transferred", {
             assignmentId: assignment._id,
             chatId: assignment.chat,
             fakeUser: assignment.fakeUser,
@@ -136,6 +146,8 @@ const checkExpiredAssignments = async () => {
             assignedAt,
             expiresAt,
             sameModerator: true,
+          }).catch((err) => {
+            console.warn("[Expiry] Failed to notify reassigned moderator:", err.message);
           });
         }
       } catch (assignmentError) {
@@ -159,7 +171,11 @@ const startAssignmentExpiryChecker = () => {
   console.log("⏱️ Assignment expiry checker started.");
 
   setInterval(async () => {
-    await checkExpiredAssignments();
+    try {
+      await checkExpiredAssignments();
+    } catch (err) {
+      console.error("❌ Unexpected error in assignment expiry interval:", err.message);
+    }
   }, 10 * 1000);
 };
 

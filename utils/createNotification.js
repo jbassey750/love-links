@@ -1,5 +1,5 @@
 const Notification = require("../models/Notification");
-const { getIO } = require("../socket/socketManager");
+const { publishToUser } = require("../services/realtimeEventService");
 
 const createNotification = async ({
   receiver,
@@ -21,10 +21,7 @@ const createNotification = async ({
     data,
   });
 
-  // Emit notification in real time 
-  const io = getIO();
-
-  io.to(receiver.toString()).emit("new-notification", notification);
+  await publishToUser(receiver, "new-notification", notification);
 
   return notification;
 };

@@ -1,5 +1,3 @@
-const { getIO } = require("../socket/socketManager");
-
 const User = require("../models/User");
 const Like = require("../models/Like");
 const Match = require("../models/Match");
@@ -8,6 +6,7 @@ const Message = require("../models/Message");
 const createNotification = require("../utils/createNotification");
 
 const { assignModerator } = require("../services/fakeAccountAssignmentService");
+const { publishToUser } = require("../services/realtimeEventService");
 
 /**
  * Like a user or create a match
@@ -202,16 +201,13 @@ exports.likeUser = async (req, res) => {
       console.log("⚠️ NO FAKE ACCOUNT DETECTED");
     }
 
-    //socket.io emmited
-    const io = getIO();
-
-    io.to(userId.toString()).emit("new-match", {
+    await publishToUser(userId, "new-match", {
       matchId: match._id,
       chatId: chat._id,
       user: targetUser,
     });
 
-    io.to(targetUserId.toString()).emit("new-match", {
+    await publishToUser(targetUserId, "new-match", {
       matchId: match._id,
       chatId: chat._id,
       user,
@@ -294,16 +290,20 @@ exports.getMatches = async (req, res) => {
     console.log("========= MATCHES =========");
 
     matches.forEach((match) => {
-      console.log(
-        match.users.map((user) => ({
-          name: user.fullName,
-          status: user.status,
-        })),
-      );
+      if (Array.isArray(match.users)) {
+        console.log(
+          match.users
+            .filter(Boolean)
+            .map((user) => ({
+              name: user.fullName || "Unknown",
+              status: user.status || "offline",
+            })),
+        );
+      }
     });
 
     const chatIds = matches
-      .map((match) => match.chatId?._id)
+      .map((match) => match.chatId?._id || match.chatId)
       .filter(Boolean);
     const unreadMessages = await Message.aggregate([
       {
@@ -328,24 +328,34 @@ exports.getMatches = async (req, res) => {
     // ADD THE CODE HERE
     // ============================
     const formattedMatches = matches.map((match) => {
-      const otherUser = match.users.find(
-        (user) => user._id.toString() !== req.user._id.toString(),
-      );
+      const otherUser = Array.isArray(match.users)
+        ? match.users.find(
+            (user) =>
+              user &&
+              user._id &&
+              user._id.toString() !== req.user._id.toString(),
+          )
+        : null;
+
+      const rawChatId = match.chatId?._id || match.chatId;
+      const chatIdStr = rawChatId ? rawChatId.toString() : null;
 
       return {
         _id: match._id,
-        chatId: match.chatId?._id,
-        user: otherUser,
+        chatId: rawChatId || null,
+        user: otherUser || null,
         lastMessage:
           match.chatId?.lastMessage?.message ||
-          {
-            image: "Photo",
-            audio: "Audio message",
-            video: "Video",
-          }[match.chatId?.lastMessage?.messageType] ||
+          (match.chatId?.lastMessage?.messageType
+            ? {
+                image: "Photo",
+                audio: "Audio message",
+                video: "Video",
+              }[match.chatId.lastMessage.messageType]
+            : null) ||
           "No messages yet",
         lastMessageAt: match.chatId?.lastMessage?.createdAt || null,
-        unreadCount: unreadCountsByChat.get(match.chatId?._id.toString()) || 0,
+        unreadCount: chatIdStr ? (unreadCountsByChat.get(chatIdStr) || 0) : 0,
       };
     });
 
@@ -418,14 +428,14 @@ exports.removeMatch = async (req, res) => {
       });
     }
 
-    const io = getIO();
-
-    match.users.forEach((userId) => {
-      io.to(userId.toString()).emit("match-removed", {
+    await Promise.all(
+      match.users.map((userId) =>
+        publishToUser(userId, "match-removed", {
         matchId: match._id,
         chatId: match.chatId,
-      });
-    });
+        }),
+      ),
+    );
 
     res.status(200).json({
       success: true,

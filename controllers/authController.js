@@ -484,7 +484,7 @@ exports.login = async (req, res) => {
     if (delivery.status === "delivery_failed") {
       return res.status(503).json({
         success: false,
-        message: "Login requires email verification, but the verification email could not be sent. Please retry after the cooldown.",
+        message: "Login requires email verification, but email delivery is temporarily unavailable. No verification code was sent; please try again shortly.",
         ...otpResponse,
       });
     }

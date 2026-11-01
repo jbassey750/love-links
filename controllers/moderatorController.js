@@ -1,5 +1,5 @@
 const Chat = require("../models/Chat");
-const { getIO } = require("../socket/socketManager");
+const { publishToUser } = require("../services/realtimeEventService");
 const Message = require("../models/Message");
 const User = require("../models/User");
 const FakeAccountAssignment = require("../models/FakeAccountAssignment");
@@ -145,10 +145,11 @@ exports.replyAsFakeUser = async (req, res) => {
     });
 
     // Socket
-    const io = getIO();
-
-    io.to(assignment.chat._id.toString()).emit("new-message", populatedMessage);
-    io.to(assignment.realUser._id.toString()).emit("new-message", populatedMessage);
+    await publishToUser(
+      assignment.realUser._id,
+      "new-message",
+      populatedMessage,
+    );
 
     // ==========================================
     // Create notification for real/premium user

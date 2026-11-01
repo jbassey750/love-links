@@ -19,6 +19,7 @@ const moderatorRoutes = require("../routers/moderatorRoutes");
 const diaryRoutes = require("../routers/diaryRoutes");
 const datePlanRoutes = require("../routers/datePlanRoutes");
 const otpRoutes = require("../routers/otpRoutes");
+const eventRoutes = require("../routers/eventRoutes");
 
 const moderatorStatsRoutes = require("../routers/moderatorStatsRoutes");
 
@@ -50,6 +51,7 @@ const corsOptions = {
     "Content-Type",
     "Accept",
     "Authorization",
+    "Last-Event-ID",
   ],
 };
 
@@ -147,5 +149,6 @@ app.use("/api/moderator", moderatorStatsRoutes);
 app.use("/api/diary", diaryRoutes);
 app.use("/api/date-plans", datePlanRoutes);
 app.use("/api/otp", otpRoutes);
+app.use("/api/events", eventRoutes);
 
 module.exports = app;

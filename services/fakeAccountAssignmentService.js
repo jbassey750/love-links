@@ -544,9 +544,8 @@ const processExpiredAssignments = async () => {
          *
          * The new moderator receives the conversation.
          */
-        const io = require("../socket/socketManager").getIO();
-
-        io.to(oldModeratorId.toString()).emit("assignment-expired", {
+        const { publishToUser } = require("./realtimeEventService");
+        await publishToUser(oldModeratorId, "assignment-expired", {
           assignmentId: assignment._id,
           chatId: assignment.chat,
           reassigned: true,
@@ -554,7 +553,7 @@ const processExpiredAssignments = async () => {
             "Your chat session has expired. This conversation has been reassigned to another moderator.",
         });
 
-        io.to(randomModerator._id.toString()).emit("assignment-transferred", {
+        await publishToUser(randomModerator._id, "assignment-transferred", {
           assignmentId: populatedAssignment._id,
           chatId: populatedAssignment.chat?._id || populatedAssignment.chat,
           fakeUser: populatedAssignment.fakeUser,
