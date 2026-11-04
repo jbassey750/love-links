@@ -530,7 +530,7 @@ exports.approveFakeLike = async (req, res) => {
 };
 
 exports.createModerator = async (req, res) => {
-  try {
+  try { 
     const {
       fullName,
       username,
@@ -546,6 +546,63 @@ exports.createModerator = async (req, res) => {
       badge,
       lookingFor,
     } = req.body;
+
+    const allowedLookingFor = [
+      "female",
+      "male",
+      "non-binary",
+      "agender",
+      "bigender",
+      "genderfluid",
+      "genderqueer",
+      "transgender",
+      "prefer not to say",
+      "other",
+    ];
+    let normalizedLookingFor = lookingFor;
+
+    if (typeof normalizedLookingFor === "string") {
+      const trimmedLookingFor = normalizedLookingFor.trim();
+      if (!trimmedLookingFor) {
+        normalizedLookingFor = [];
+      } else {
+        try {
+          normalizedLookingFor = JSON.parse(trimmedLookingFor);
+        } catch {
+          normalizedLookingFor = trimmedLookingFor;
+        }
+      }
+    }
+
+    if (typeof normalizedLookingFor === "string") {
+      normalizedLookingFor = [normalizedLookingFor];
+    }
+
+    if (
+      normalizedLookingFor !== undefined &&
+      (!Array.isArray(normalizedLookingFor) ||
+        normalizedLookingFor.some(
+          (value) => typeof value !== "string" || !value.trim(),
+        ))
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Looking for must be a selection or an array of selections.",
+      });
+    }
+
+    if (Array.isArray(normalizedLookingFor)) {
+      normalizedLookingFor = normalizedLookingFor.map((value) => value.trim());
+      const invalidLookingFor = normalizedLookingFor.find(
+        (value) => !allowedLookingFor.includes(value),
+      );
+      if (invalidLookingFor) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid lookingFor value "${invalidLookingFor}". Choose from: ${allowedLookingFor.join(", ")}.`,
+        });
+      }
+    }
 
     if (!email || !password) {
       return res.status(400).json({
@@ -581,7 +638,9 @@ exports.createModerator = async (req, res) => {
       bio,
       interests,
       badge,
-      lookingFor,
+      ...(normalizedLookingFor?.length
+        ? { lookingFor: normalizedLookingFor }
+        : {}),
       photo: req.file ? req.file.filename : "",
       role: "moderator",
       accountType: "real",
