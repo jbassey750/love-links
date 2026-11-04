@@ -1,6 +1,9 @@
 const FakeAccountAssignment = require("../models/FakeAccountAssignment");
 const User = require("../models/User");
-// const { getOnlineModerators } = require("../socket/socketManager");
+const {
+  reserveModerator,
+  releaseModeratorReservation,
+} = require("./assignmentExpiryService");
 
 /**
  * Get online moderators excluding a specific moderator.
@@ -10,13 +13,19 @@ const getAvailableModerators = async (excludeModeratorId = null) => {
     role: "moderator",
     status: "online",
   }).select("_id fullName username photo status role accountType");
-
-  if (!excludeModeratorId) {
-    return moderators;
-  }
+  const activeModeratorIds = await FakeAccountAssignment.distinct("moderator", {
+    status: "active",
+    expiresAt: { $gt: new Date() },
+  });
+  const activeModeratorIdSet = new Set(
+    activeModeratorIds.map((id) => id.toString()),
+  );
 
   return moderators.filter(
-    (moderator) => moderator._id.toString() !== excludeModeratorId.toString(),
+    (moderator) =>
+      (!excludeModeratorId ||
+        moderator._id.toString() !== excludeModeratorId.toString()) &&
+      !activeModeratorIdSet.has(moderator._id.toString()),
   );
 };
 
@@ -33,16 +42,34 @@ const getFiveMinuteExpiry = (assignedAt) => {
 const renewAssignment = async (assignment) => {
   const assignedAt = new Date();
   const expiresAt = getFiveMinuteExpiry(assignedAt);
+  const staleClaimBefore = new Date(assignedAt.getTime() - 5 * 60 * 1000);
+  const renewedAssignment = await FakeAccountAssignment.findOneAndUpdate(
+    {
+      _id: assignment._id,
+      moderator: assignment.moderator?._id || assignment.moderator,
+      status: "active",
+      respondedAt: null,
+      expiresAt: { $lte: assignedAt },
+      $or: [
+        { replyClaimedAt: null },
+        { replyClaimedAt: { $lte: staleClaimBefore } },
+      ],
+    },
+    {
+      $set: {
+        status: "active",
+        assignedAt,
+        expiresAt,
+        respondedAt: null,
+        releasedAt: null,
+        replyClaimedAt: null,
+      },
+    },
+    { new: true },
+  );
+  if (!renewedAssignment) return null;
 
-  assignment.status = "active";
-  assignment.assignedAt = assignedAt;
-  assignment.expiresAt = expiresAt;
-  assignment.respondedAt = null;
-  assignment.releasedAt = null;
-
-  await assignment.save();
-
-  return await assignment.populate([
+  return renewedAssignment.populate([
     {
       path: "moderator",
       select: "fullName username photo status",
@@ -71,9 +98,8 @@ const renewAssignment = async (assignment) => {
  * - If assignment expired and another moderator is online,
  *   transfer it.
  *
- * - If assignment expired but no other moderator is online,
- *   keep the current assignment so it can be renewed when a new
- *   real-user message arrives.
+ * - If assignment expired but no other moderator is eligible,
+ *   the shared expiry workflow leaves it in the waiting queue.
  */
 const assignModerator = async (arg1, arg2, arg3) => {
   let fakeUserId;
@@ -125,39 +151,91 @@ const assignModerator = async (arg1, arg2, arg3) => {
     /**
      * Assignment expired.
      *
-     * Check whether another moderator is actually online.
+     * Use the shared atomic expiry workflow rather than transferring this
+     * assignment from a request handler.
      */
     if (isExpired) {
-      const availableModerators = await getAvailableModerators(
-        assignment.moderator?._id,
-      );
+      const { checkExpiredAssignments } = require("./assignmentExpiryService");
+      await checkExpiredAssignments();
+      return FakeAccountAssignment.findOne({
+        chat: chatId,
+        status: "active",
+        expiresAt: { $gt: new Date() },
+      })
+        .populate("moderator")
+        .populate("fakeUser")
+        .populate("realUser")
+        .populate("chat");
+    }
 
-      console.log("Expired assignment:", assignment._id.toString());
-      console.log("Other available moderators:", availableModerators.length);
+    /**
+     * Assignment has not expired, but its moderator went offline.
+     *
+     * Try to find another online moderator.
+     */
+    const availableModerators = await getAvailableModerators(
+      assignment.moderator?._id,
+    );
 
-      /**
-       * Another moderator is available.
-       * Transfer the existing assignment.
-       */
-      if (availableModerators.length > 0) {
-        const randomModerator =
-          availableModerators[
-            Math.floor(Math.random() * availableModerators.length)
-          ];
+    let selectedModerator = null;
+    let moderatorReservation = null;
+    for (const moderator of availableModerators.sort(
+      () => Math.random() - 0.5,
+    )) {
+      const reservation = await reserveModerator(moderator._id);
+      if (!reservation) continue;
 
-        const assignedAt = new Date();
-        const expiresAt = getFiveMinuteExpiry(assignedAt);
+      const hasActiveAssignment = await FakeAccountAssignment.exists({
+        moderator: moderator._id,
+        status: "active",
+        expiresAt: { $gt: new Date() },
+      });
+      if (hasActiveAssignment) {
+        await releaseModeratorReservation(moderator._id, reservation);
+        continue;
+      }
 
-        assignment.moderator = randomModerator._id;
-        assignment.assignedAt = assignedAt;
-        assignment.expiresAt = expiresAt;
-        assignment.respondedAt = null;
-        assignment.releasedAt = null;
-        assignment.status = "active";
+      selectedModerator = moderator;
+      moderatorReservation = reservation;
+      break;
+    }
 
-        await assignment.save();
+    if (selectedModerator) {
+      const assignedAt = new Date();
+      const expiresAt = getFiveMinuteExpiry(assignedAt);
+      let transferredAssignment;
+      try {
+        transferredAssignment =
+          await FakeAccountAssignment.findOneAndUpdate(
+            {
+              _id: assignment._id,
+              moderator: assignment.moderator?._id || assignment.moderator,
+              status: "active",
+              respondedAt: null,
+              expiresAt: { $gt: assignedAt },
+              replyClaimedAt: null,
+            },
+            {
+              $set: {
+                moderator: selectedModerator._id,
+                assignedAt,
+                expiresAt,
+                respondedAt: null,
+                releasedAt: null,
+                replyClaimedAt: null,
+              },
+            },
+            { new: true },
+          );
+      } finally {
+        await releaseModeratorReservation(
+          selectedModerator._id,
+          moderatorReservation,
+        );
+      }
 
-        return await assignment.populate([
+      if (transferredAssignment) {
+        return transferredAssignment.populate([
           {
             path: "moderator",
             select: "fullName username photo status",
@@ -175,65 +253,6 @@ const assignModerator = async (arg1, arg2, arg3) => {
           },
         ]);
       }
-
-      /**
-       * Nobody else is online.
-       *
-       * IMPORTANT:
-       * Do not transfer or close the assignment.
-       *
-       * Keep it attached to the current moderator. The assignment
-       * will be renewed when the real user sends another message.
-       */
-      console.log("No other moderator online. Keeping expired assignment.");
-
-      return assignment;
-    }
-
-    /**
-     * Assignment has not expired, but its moderator went offline.
-     *
-     * Try to find another online moderator.
-     */
-    const availableModerators = await getAvailableModerators(
-      assignment.moderator?._id,
-    );
-
-    if (availableModerators.length > 0) {
-      const randomModerator =
-        availableModerators[
-          Math.floor(Math.random() * availableModerators.length)
-        ];
-
-      const assignedAt = new Date();
-      const expiresAt = getFiveMinuteExpiry(assignedAt);
-
-      assignment.moderator = randomModerator._id;
-      assignment.assignedAt = assignedAt;
-      assignment.expiresAt = expiresAt;
-      assignment.respondedAt = null;
-      assignment.releasedAt = null;
-      assignment.status = "active";
-
-      await assignment.save();
-
-      return await assignment.populate([
-        {
-          path: "moderator",
-          select: "fullName username photo status",
-        },
-        {
-          path: "fakeUser",
-          select: "fullName username photo status accountType",
-        },
-        {
-          path: "realUser",
-          select: "fullName username photo status accountType",
-        },
-        {
-          path: "chat",
-        },
-      ]);
     }
 
     /**
@@ -247,10 +266,12 @@ const assignModerator = async (arg1, arg2, arg3) => {
    * No existing assignment.
    * Find an online moderator.
    */
-  const moderators = await User.find({
-  role: "moderator",
-  status: "online",
-}).select("_id fullName username photo status role accountType");
+  const waitingAssignment = await FakeAccountAssignment.findOne({
+    chat: chatId,
+    status: "transferred",
+    respondedAt: null,
+  }).sort({ releasedAt: 1 });
+  const moderators = await getAvailableModerators();
 
   console.log("========== ONLINE MODERATORS ==========");
   console.log("Count:", moderators.length);
@@ -261,21 +282,72 @@ const assignModerator = async (arg1, arg2, arg3) => {
     throw new Error("No moderators are currently online.");
   }
 
-  const randomModerator =
-    moderators[Math.floor(Math.random() * moderators.length)];
+  let randomModerator = null;
+  let moderatorReservation = null;
+  for (const moderator of moderators.sort(() => Math.random() - 0.5)) {
+    const reservation = await reserveModerator(moderator._id);
+    if (!reservation) continue;
+
+    const hasActiveAssignment = await FakeAccountAssignment.exists({
+      moderator: moderator._id,
+      status: "active",
+      expiresAt: { $gt: new Date() },
+    });
+    if (hasActiveAssignment) {
+      await releaseModeratorReservation(moderator._id, reservation);
+      continue;
+    }
+
+    randomModerator = moderator;
+    moderatorReservation = reservation;
+    break;
+  }
+
+  if (!randomModerator) {
+    throw new Error("No moderators are currently available.");
+  }
 
   const assignedAt = new Date();
   const expiresAt = getFiveMinuteExpiry(assignedAt);
-
-  assignment = await FakeAccountAssignment.create({
-    chat: chatId,
-    fakeUser: fakeUserId,
-    realUser: realUserId,
-    moderator: randomModerator._id,
-    status: "active",
-    assignedAt,
-    expiresAt,
-  });
+  try {
+    if (waitingAssignment) {
+      assignment = await FakeAccountAssignment.findOneAndUpdate(
+        {
+          _id: waitingAssignment._id,
+          status: "transferred",
+          respondedAt: null,
+        },
+        {
+          $set: {
+            moderator: randomModerator._id,
+            status: "active",
+            assignedAt,
+            expiresAt,
+            respondedAt: null,
+            releasedAt: null,
+            replyClaimedAt: null,
+          },
+        },
+        { new: true },
+      );
+    } else {
+      assignment = await FakeAccountAssignment.create({
+        chat: chatId,
+        fakeUser: fakeUserId,
+        realUser: realUserId,
+        moderator: randomModerator._id,
+        status: "active",
+        assignedAt,
+        expiresAt,
+      });
+    }
+  } finally {
+    await releaseModeratorReservation(
+      randomModerator._id,
+      moderatorReservation,
+    );
+  }
+  if (!assignment) return null;
 
   console.log("FAKE ACCOUNT ASSIGNMENT CREATED");
   console.log("Assignment ID:", assignment._id.toString());
@@ -360,7 +432,19 @@ const renewAssignmentIfPossible = async (assignmentId) => {
     return null;
   }
 
-  return await renewAssignment(assignment);
+  const reservation = await reserveModerator(moderator._id);
+  if (!reservation) return null;
+  try {
+    const hasActiveAssignment = await FakeAccountAssignment.exists({
+      moderator: moderator._id,
+      status: "active",
+      expiresAt: { $gt: new Date() },
+    });
+    if (hasActiveAssignment) return null;
+    return await renewAssignment(assignment);
+  } finally {
+    await releaseModeratorReservation(moderator._id, reservation);
+  }
 };
 
 /**
@@ -387,59 +471,96 @@ const transferAssignment = async (assignmentId) => {
     throw new Error("Assignment not found.");
   }
 
-  const moderators = await User.find({
-  role: "moderator",
-  status: "online",
-}).select("_id fullName username photo status role accountType");
+  const previousModeratorId = assignment.moderator?._id || assignment.moderator;
+  const availableModerators = await getAvailableModerators(previousModeratorId);
+  let selectedModerator = null;
+  let moderatorReservation = null;
 
-  if (!moderators.length) {
-    throw new Error("No moderators are currently online.");
+  for (const moderator of availableModerators.sort(
+    () => Math.random() - 0.5,
+  )) {
+    const reservation = await reserveModerator(moderator._id);
+    if (!reservation) continue;
+
+    const hasActiveAssignment = await FakeAccountAssignment.exists({
+      moderator: moderator._id,
+      status: "active",
+      expiresAt: { $gt: new Date() },
+    });
+    if (hasActiveAssignment) {
+      await releaseModeratorReservation(moderator._id, reservation);
+      continue;
+    }
+
+    selectedModerator = moderator;
+    moderatorReservation = reservation;
+    break;
   }
-
-  const availableModerators = moderators.filter(
-    (mod) => mod._id.toString() !== assignment.moderator.toString(),
-  );
-
-  /**
-   * No other moderator is online.
-   * Keep the current assignment instead of closing it.
-   */
-  if (!availableModerators.length) {
-    return assignment.populate([
-      {
-        path: "moderator",
-        select: "fullName username photo status",
-      },
-      {
-        path: "fakeUser",
-        select: "fullName username photo status accountType",
-      },
-      {
-        path: "realUser",
-        select: "fullName username photo status accountType",
-      },
-      {
-        path: "chat",
-      },
-    ]);
-  }
-
-  const randomModerator =
-    availableModerators[Math.floor(Math.random() * availableModerators.length)];
 
   const assignedAt = new Date();
-  const expiresAt = getFiveMinuteExpiry(assignedAt);
+  const staleClaimBefore = new Date(assignedAt.getTime() - 5 * 60 * 1000);
+  let updatedAssignment;
+  if (!selectedModerator) {
+    updatedAssignment = await FakeAccountAssignment.findOneAndUpdate(
+      {
+        _id: assignment._id,
+        moderator: previousModeratorId,
+        status: "active",
+        respondedAt: null,
+        expiresAt: { $lte: assignedAt },
+        $or: [
+          { replyClaimedAt: null },
+          { replyClaimedAt: { $lte: staleClaimBefore } },
+        ],
+      },
+      {
+        $set: {
+          status: "transferred",
+          releasedAt: assignedAt,
+          replyClaimedAt: null,
+        },
+      },
+      { new: true },
+    );
+    if (!updatedAssignment) return null;
+  } else {
+    const expiresAt = getFiveMinuteExpiry(assignedAt);
+    try {
+      updatedAssignment = await FakeAccountAssignment.findOneAndUpdate(
+        {
+          _id: assignment._id,
+          moderator: previousModeratorId,
+          status: "active",
+          respondedAt: null,
+          expiresAt: { $lte: assignedAt },
+          $or: [
+            { replyClaimedAt: null },
+            { replyClaimedAt: { $lte: staleClaimBefore } },
+          ],
+        },
+        {
+          $set: {
+            moderator: selectedModerator._id,
+            assignedAt,
+            expiresAt,
+            respondedAt: null,
+            releasedAt: null,
+            status: "active",
+            replyClaimedAt: null,
+          },
+        },
+        { new: true },
+      );
+    } finally {
+      await releaseModeratorReservation(
+        selectedModerator._id,
+        moderatorReservation,
+      );
+    }
+    if (!updatedAssignment) return null;
+  }
 
-  assignment.moderator = randomModerator._id;
-  assignment.assignedAt = assignedAt;
-  assignment.expiresAt = expiresAt;
-  assignment.respondedAt = null;
-  assignment.releasedAt = null;
-  assignment.status = "active";
-
-  await assignment.save();
-
-  return await assignment.populate([
+  return updatedAssignment.populate([
     {
       path: "moderator",
       select: "fullName username photo status",
@@ -465,135 +586,8 @@ const transferAssignment = async (assignmentId) => {
  * an assignment expires.
  */
 const processExpiredAssignments = async () => {
-  const now = new Date();
-
-  const expiredAssignments = await FakeAccountAssignment.find({
-    status: "active",
-    expiresAt: { $lte: now },
-  });
-
-  if (!expiredAssignments.length) {
-    return;
-  }
-
-  console.log(`Found ${expiredAssignments.length} expired assignment(s).`);
-
-  for (const assignment of expiredAssignments) {
-    try {
-      /**
-       * Get online moderators excluding the moderator who
-       * currently owns this assignment.
-       */
-      const availableModerators = await getAvailableModerators(
-        assignment.moderator,
-      );
-
-      /**
-       * ANOTHER MODERATOR IS ONLINE
-       *
-       * Transfer the conversation.
-       */
-      if (availableModerators.length > 0) {
-        const randomModerator =
-          availableModerators[
-            Math.floor(Math.random() * availableModerators.length)
-          ];
-
-        const oldModeratorId = assignment.moderator;
-        const assignedAt = new Date();
-        const expiresAt = getFiveMinuteExpiry(assignedAt);
-
-        assignment.moderator = randomModerator._id;
-        assignment.assignedAt = assignedAt;
-        assignment.expiresAt = expiresAt;
-        assignment.respondedAt = null;
-        assignment.releasedAt = null;
-        assignment.status = "active";
-
-        await assignment.save();
-
-        const populatedAssignment = await assignment.populate([
-          {
-            path: "moderator",
-            select: "fullName username photo status",
-          },
-          {
-            path: "fakeUser",
-            select: "fullName username photo status accountType",
-          },
-          {
-            path: "realUser",
-            select: "fullName username photo status accountType",
-          },
-          {
-            path: "chat",
-          },
-        ]);
-
-        console.log("ASSIGNMENT TRANSFERRED");
-        console.log("Assignment:", assignment._id.toString());
-        console.log("Old moderator:", oldModeratorId.toString());
-        console.log("New moderator:", randomModerator._id.toString());
-        console.log("New expiry:", expiresAt);
-
-        /**
-         * Emit socket events.
-         *
-         * The old moderator is told that the conversation
-         * has been reassigned.
-         *
-         * The new moderator receives the conversation.
-         */
-        const { publishToUser } = require("./realtimeEventService");
-        await publishToUser(oldModeratorId, "assignment-expired", {
-          assignmentId: assignment._id,
-          chatId: assignment.chat,
-          reassigned: true,
-          message:
-            "Your chat session has expired. This conversation has been reassigned to another moderator.",
-        });
-
-        await publishToUser(randomModerator._id, "assignment-transferred", {
-          assignmentId: populatedAssignment._id,
-          chatId: populatedAssignment.chat?._id || populatedAssignment.chat,
-          fakeUser: populatedAssignment.fakeUser,
-          realUser: populatedAssignment.realUser,
-          assignedAt,
-          expiresAt,
-        });
-
-        continue;
-      }
-
-      /**
-       * NOBODY ELSE IS ONLINE
-       *
-       * IMPORTANT:
-       *
-       * Do NOT transfer.
-       * Do NOT close the assignment.
-       * Do NOT mark it as transferred.
-       *
-       * The current moderator keeps ownership.
-       *
-       * When the real user sends another message,
-       * messageController.js will renew the assignment.
-       */
-      console.log("Assignment expired, but no other moderator is online.");
-
-      console.log("Keeping assignment:", assignment._id.toString());
-
-      /**
-       * We deliberately do not modify the assignment here.
-       */
-    } catch (error) {
-      console.error(
-        "Error processing expired assignment:",
-        assignment._id?.toString(),
-        error,
-      );
-    }
-  }
+  const { checkExpiredAssignments } = require("./assignmentExpiryService");
+  return checkExpiredAssignments();
 };
 
 module.exports = {

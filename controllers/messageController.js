@@ -195,7 +195,11 @@ exports.sendMessage = async (req, res) => {
           }
         }
 
-        if (assignment?.moderator?._id) {
+        if (
+          assignment?.status === "active" &&
+          assignment.expiresAt > new Date() &&
+          assignment?.moderator?._id
+        ) {
           await publishToUser(
             assignment.moderator._id,
             "fake-account-message",
@@ -253,15 +257,30 @@ exports.sendMessage = async (req, res) => {
     }
 
     // Update chat data after message save and point deduction
-    chat.lastMessage = newMessage._id;
-    chat.lastMessageAt = new Date();
-    await chat.save();
-    console.log(
-      "Chat updated:",
-      chat._id.toString(),
-      "lastMessage:",
-      chat.lastMessage.toString(),
+    await Chat.updateOne(
+      {
+        _id: chat._id,
+        $or: [
+          { lastMessageAt: null },
+          { lastMessageAt: { $lt: newMessage.createdAt } },
+          {
+            lastMessageAt: newMessage.createdAt,
+            lastMessage: { $lt: newMessage._id },
+          },
+          {
+            lastMessageAt: newMessage.createdAt,
+            lastMessage: null,
+          },
+        ],
+      },
+      {
+        $set: {
+          lastMessage: newMessage._id,
+          lastMessageAt: newMessage.createdAt,
+        },
+      },
     );
+    console.log("Chat latest message checked:", chat._id.toString());
 
     await publishToUser(receiverId, "new-message", newMessage.toObject());
 
@@ -473,7 +492,7 @@ exports.getMessages = async (req, res) => {
     })
       .populate("sender", "fullName username photo badge role accountType")
       .populate("receiver", "fullName username photo badge role accountType")
-      .sort({ createdAt: 1 });
+      .sort({ createdAt: 1, _id: 1 });
 
     // =====================================================
     // Response

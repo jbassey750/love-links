@@ -43,11 +43,16 @@ const FakeAccountAssignmentSchema = new mongoose.Schema(
     },
 
     respondedAt: {
-  type: Date,
-  default: null,
-},
+      type: Date,
+      default: null,
+    },
 
     releasedAt: {
+      type: Date,
+      default: null,
+    },
+
+    replyClaimedAt: {
       type: Date,
       default: null,
     },

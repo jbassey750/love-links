@@ -355,6 +355,7 @@ exports.getMatches = async (req, res) => {
             : null) ||
           "No messages yet",
         lastMessageAt: match.chatId?.lastMessage?.createdAt || null,
+        lastMessageId: match.chatId?.lastMessage?._id || null,
         unreadCount: chatIdStr ? (unreadCountsByChat.get(chatIdStr) || 0) : 0,
       };
     });

@@ -1,8 +1,12 @@
-const Chat = require("../models/Chat");
+const Chat = require("../models/Chat"); 
 const FakeAccountAssignment = require("../models/FakeAccountAssignment");
 const RealtimeConnection = require("../models/RealtimeConnection");
 const User = require("../models/User");
 const { publishToUser } = require("./realtimeEventService");
+const {
+  reserveModerator,
+  releaseModeratorReservation,
+} = require("./assignmentExpiryService");
 
 const PRESENCE_TTL_MS = 70 * 1000;
 
@@ -39,21 +43,36 @@ const publishPresence = async (userId, status) => {
 };
 
 const assignWaitingChats = async (moderatorId) => {
+  let reservation;
   try {
-    const assignment = await FakeAccountAssignment.findOne({
-      status: "transferred",
-    }).sort({ releasedAt: 1 });
-    if (!assignment) return;
+    reservation = await reserveModerator(moderatorId);
+    if (!reservation) return;
 
     const assignedAt = new Date();
+    const hasActiveAssignment = await FakeAccountAssignment.exists({
+      moderator: moderatorId,
+      status: "active",
+      expiresAt: { $gt: assignedAt },
+    });
+    if (hasActiveAssignment) return;
+
     const expiresAt = new Date(assignedAt.getTime() + 5 * 60 * 1000);
-    assignment.moderator = moderatorId;
-    assignment.status = "active";
-    assignment.assignedAt = assignedAt;
-    assignment.expiresAt = expiresAt;
-    assignment.respondedAt = null;
-    assignment.releasedAt = null;
-    await assignment.save();
+    const assignment = await FakeAccountAssignment.findOneAndUpdate(
+      { status: "transferred", respondedAt: null },
+      {
+        $set: {
+          moderator: moderatorId,
+          status: "active",
+          assignedAt,
+          expiresAt,
+          respondedAt: null,
+          releasedAt: null,
+          replyClaimedAt: null,
+        },
+      },
+      { new: true, sort: { releasedAt: 1 } },
+    );
+    if (!assignment) return;
 
     await publishToUser(moderatorId, "assignment-transferred", {
       assignmentId: assignment._id,
@@ -67,6 +86,8 @@ const assignWaitingChats = async (moderatorId) => {
     });
   } catch (error) {
     console.error("[Presence] assignWaitingChats failed:", error.message);
+  } finally {
+    await releaseModeratorReservation(moderatorId, reservation);
   }
 };
 

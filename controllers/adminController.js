@@ -1197,10 +1197,29 @@ exports.startAdminConversation = async (req, res) => {
     // Update chat
     // =========================================================
 
-    chat.lastMessage = newMessage._id;
-    chat.lastMessageAt = newMessage.createdAt;
-
-    await chat.save();
+    await Chat.updateOne(
+      {
+        _id: chat._id,
+        $or: [
+          { lastMessageAt: null },
+          { lastMessageAt: { $lt: newMessage.createdAt } },
+          {
+            lastMessageAt: newMessage.createdAt,
+            lastMessage: { $lt: newMessage._id },
+          },
+          {
+            lastMessageAt: newMessage.createdAt,
+            lastMessage: null,
+          },
+        ],
+      },
+      {
+        $set: {
+          lastMessage: newMessage._id,
+          lastMessageAt: newMessage.createdAt,
+        },
+      },
+    );
 
     await publishToUser(recipient._id, "new-message", {
       ...newMessage.toObject(),

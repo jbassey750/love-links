@@ -147,6 +147,12 @@ const UserSchema = new mongoose.Schema(
       default: "offline",
     },
 
+    assignmentClaimedAt: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+
     likes: [
       {
         type: mongoose.Schema.Types.ObjectId,

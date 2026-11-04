@@ -27,4 +27,4 @@ const RealtimeEventSchema = new mongoose.Schema(
 
 RealtimeEventSchema.index({ recipient: 1, _id: 1 });
 
-module.exports = mongoose.model("RealtimeEvent", RealtimeEventSchema);
+module.exports = mongoose.model("RealtimeEvent", RealtimeEventSchema); 
