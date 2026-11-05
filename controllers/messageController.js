@@ -548,6 +548,13 @@ exports.markAsSeen = async (req, res) => {
       });
     }
 
+    if (message.receiver.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Only the message recipient can mark it as seen.",
+      });
+    }
+
     if (message.seen) {
       return res.status(200).json({
         success: true,
@@ -555,19 +562,46 @@ exports.markAsSeen = async (req, res) => {
       });
     }
 
-    message.seen = true;
+    const updatedMessage = await Message.findOneAndUpdate(
+      { _id: message._id, receiver: req.user._id, seen: false },
+      { $set: { seen: true } },
+      { new: true },
+    );
 
-    await message.save();
+    if (!updatedMessage) {
+      const currentMessage = await Message.findById(message._id).select("seen");
+      if (currentMessage?.seen) {
+        return res.status(200).json({
+          success: true,
+          message: "Message already marked as seen.",
+        });
+      }
 
-    await Promise.all(
+      return res.status(409).json({
+        success: false,
+        message: "Message could not be marked as seen.",
+      });
+    }
+
+    const seenEvent = {
+      messageId: updatedMessage._id,
+      seenBy: req.user._id,
+      chatId: chat._id,
+    };
+
+    const publishResults = await Promise.allSettled(
       chat.participants.map((participantId) =>
-        publishToUser(participantId, "message-seen", {
-          messageId: message._id,
-          seenBy: req.user._id,
-          chatId: chat._id,
-        }),
+        publishToUser(participantId, "message-seen", seenEvent),
       ),
     );
+    publishResults.forEach((result) => {
+      if (result.status === "rejected") {
+        console.error(
+          "[Message] Failed to publish message-seen event:",
+          result.reason?.message || result.reason,
+        );
+      }
+    });
 
     res.status(200).json({
       success: true,

@@ -3,10 +3,84 @@ const Like = require("../models/Like");
 const Match = require("../models/Match");
 const Chat = require("../models/Chat");
 const Message = require("../models/Message");
-const createNotification = require("../utils/createNotification");
+const Notification = require("../models/Notification");
 
 const { assignModerator } = require("../services/fakeAccountAssignmentService");
 const { publishToUser } = require("../services/realtimeEventService");
+
+const ensureNotification = async ({
+  receiver,
+  sender,
+  type,
+  title,
+  message,
+  data,
+  dedupeField,
+  dedupeValue,
+}) => {
+  const notification =
+    (await Notification.findOne({
+      receiver,
+      sender,
+      type,
+      [`data.${dedupeField}`]: dedupeValue,
+    })) ||
+    (await Notification.create({
+      receiver,
+      sender,
+      type,
+      title,
+      body: message,
+      data,
+    }));
+
+  try {
+    await publishToUser(receiver, "new-notification", notification);
+  } catch (error) {
+    console.error("Failed to publish notification event:", error.message);
+  }
+
+  return notification;
+};
+
+const publishMatchEvent = async (receiver, data) => {
+  try {
+    await publishToUser(receiver, "new-match", data);
+  } catch (error) {
+    console.error("Failed to publish new-match event:", error.message);
+  }
+};
+
+const ensureMatchNotifications = async ({
+  match,
+  chatId,
+  user,
+  targetUser,
+  userId,
+  targetUserId,
+}) =>
+  Promise.all([
+    ensureNotification({
+      receiver: targetUserId,
+      sender: userId,
+      type: "match",
+      title: "It's a Match! ❤️",
+      message: `${user.fullName} matched with you.`,
+      data: { matchId: match._id, chatId, userId },
+      dedupeField: "matchId",
+      dedupeValue: match._id,
+    }),
+    ensureNotification({
+      receiver: userId,
+      sender: targetUserId,
+      type: "match",
+      title: "It's a Match! ❤️",
+      message: `${targetUser.fullName} matched with you.`,
+      data: { matchId: match._id, chatId, userId: targetUserId },
+      dedupeField: "matchId",
+      dedupeValue: match._id,
+    }),
+  ]);
 
 /**
  * Like a user or create a match
@@ -52,6 +126,46 @@ exports.likeUser = async (req, res) => {
     });
 
     if (existingLike) {
+      if (existingLike.status === "pending") {
+        await ensureNotification({
+          receiver: targetUserId,
+          sender: userId,
+          type: "like",
+          title: "Someone liked you ❤️",
+          message: `${user.fullName} liked your profile.`,
+          data: { userId },
+          dedupeField: "userId",
+          dedupeValue: userId,
+        });
+      } else if (existingLike.status === "matched") {
+        const existingMatch = await Match.findOne({
+          users: { $all: [userId, targetUserId], $size: 2 },
+          status: "active",
+        });
+        if (existingMatch?.chatId) {
+          await ensureMatchNotifications({
+            match: existingMatch,
+            chatId: existingMatch.chatId,
+            user,
+            targetUser,
+            userId,
+            targetUserId,
+          });
+          await Promise.all([
+            publishMatchEvent(userId, {
+              matchId: existingMatch._id,
+              chatId: existingMatch.chatId,
+              user: targetUser,
+            }),
+            publishMatchEvent(targetUserId, {
+              matchId: existingMatch._id,
+              chatId: existingMatch.chatId,
+              user,
+            }),
+          ]);
+        }
+      }
+
       return res.status(400).json({
         success: false,
         status: existingLike.status,
@@ -79,15 +193,15 @@ exports.likeUser = async (req, res) => {
       });
 
       // Send notification
-      await createNotification({
+      await ensureNotification({
         receiver: targetUserId,
         sender: userId,
         type: "like",
         title: "Someone liked you ❤️",
         message: `${user.fullName} liked your profile.`,
-        data: {
-          userId,
-        },
+        data: { userId },
+        dedupeField: "userId",
+        dedupeValue: userId,
       });
 
       return res.status(200).json({
@@ -110,6 +224,29 @@ exports.likeUser = async (req, res) => {
     });
 
     if (existingMatch) {
+      if (existingMatch.status === "active" && existingMatch.chatId) {
+        await ensureMatchNotifications({
+          match: existingMatch,
+          chatId: existingMatch.chatId,
+          user,
+          targetUser,
+          userId,
+          targetUserId,
+        });
+        await Promise.all([
+          publishMatchEvent(userId, {
+            matchId: existingMatch._id,
+            chatId: existingMatch.chatId,
+            user: targetUser,
+          }),
+          publishMatchEvent(targetUserId, {
+            matchId: existingMatch._id,
+            chatId: existingMatch.chatId,
+            user,
+          }),
+        ]);
+      }
+
       return res.status(400).json({
         success: false,
         status: "already-matched",
@@ -201,47 +338,27 @@ exports.likeUser = async (req, res) => {
       console.log("⚠️ NO FAKE ACCOUNT DETECTED");
     }
 
-    await publishToUser(userId, "new-match", {
-      matchId: match._id,
-      chatId: chat._id,
-      user: targetUser,
-    });
-
-    await publishToUser(targetUserId, "new-match", {
-      matchId: match._id,
-      chatId: chat._id,
-      user,
-    });
-
-    // Send notifications to both users concurrently
-
     console.log("Creating match notifications...");
 
-    await Promise.all([
-      createNotification({
-        receiver: targetUserId,
-        sender: userId,
-        type: "match",
-        title: "It's a Match! ❤️",
-        message: `${user.fullName} matched with you.`,
-        data: {
-          matchId: match._id,
-          chatId: chat._id,
-          userId,
-        },
-      }),
+    await ensureMatchNotifications({
+      match,
+      chatId: chat._id,
+      user,
+      targetUser,
+      userId,
+      targetUserId,
+    });
 
-      createNotification({
-        receiver: userId,
-        sender: targetUserId,
-        type: "match",
-        title: "It's a Match! ❤️",
-        message: `${targetUser.fullName} matched with you.`,
-        data: {
-          matchId: match._id,
-          chatId: chat._id,
-          userId: targetUserId,
-        },
+    await Promise.all([
+      publishMatchEvent(userId, {
+        matchId: match._id,
+        chatId: chat._id,
+        user: targetUser,
+      }),
+      publishMatchEvent(targetUserId, {
+        matchId: match._id,
+        chatId: chat._id,
+        user,
       }),
     ]);
 
